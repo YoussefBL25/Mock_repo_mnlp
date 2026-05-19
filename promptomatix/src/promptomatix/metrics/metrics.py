@@ -1549,6 +1549,23 @@ class MetricsManager:
                 
                 if response.status_code == 200:
                     b64_data = response.json()["data"][0]["b64_json"]
+                    
+                    # Proactively decode and save generated image to disk for user inspection
+                    try:
+                        import time
+                        clean_prompt = "".join([c if c.isalnum() else "_" for c in candidate_prompt[:30].strip()])
+                        filename = f"gen_{clean_prompt}_{int(time.time())}.png"
+                        
+                        output_dir = os.environ.get("GENERATED_IMAGES_DIR", "/scratch/Mock_repo_mnlp/outputs/generated_images")
+                        if not os.path.exists(output_dir):
+                            os.makedirs(output_dir, exist_ok=True)
+                            
+                        filepath = os.path.join(output_dir, filename)
+                        with open(filepath, "wb") as fh:
+                            fh.write(base64.b64decode(b64_data))
+                        print(f"📸 [SYSTEM SUCCESS] Generated image saved to disk: {filepath}")
+                    except Exception as save_err:
+                        print(f"⚠️ [SYSTEM WARNING] Failed to save generated image to disk: {str(save_err)}")
                 else:
                     raise ConnectionError("Diffusion server returned non-200 status code.")
                     
