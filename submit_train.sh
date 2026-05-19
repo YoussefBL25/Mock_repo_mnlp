@@ -20,7 +20,7 @@ GROUP="g54"                  # <-- YOUR TEAM, e.g. g07.
 # ==============================================
 
 # Edit this for your project. Keep outputs/checkpoints under /scratch.
-TRAIN_COMMAND='if [ ! -d "/scratch/Mock_repo_mnlp" ]; then git clone https://github.com/YoussefBL25/Mock_repo_mnlp.git /scratch/Mock_repo_mnlp; fi && cd /scratch/Mock_repo_mnlp && python3 promptomatix/examples/scripts/multimodal_optimization.py'
+TRAIN_COMMAND='if [ ! -d "/scratch/Mock_repo_mnlp" ]; then git clone https://github.com/YoussefBL25/Mock_repo_mnlp.git /scratch/Mock_repo_mnlp; else cd /scratch/Mock_repo_mnlp && git pull; fi && cd /scratch/Mock_repo_mnlp && python3 promptomatix/examples/scripts/multimodal_optimization.py'
 
 if [[ "${GASPAR}" == "gaspar" || -z "${GASPAR}" ]]; then
     echo "ERROR: edit submit_train.sh and set GASPAR to your EPFL GASPAR username." >&2

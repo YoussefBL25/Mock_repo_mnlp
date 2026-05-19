@@ -2,7 +2,7 @@ $Time = Get-Date -Format "HHmmss"
 $JobName = "cs552-benlasso-g54-train-$Time"
 
 # Edit this for your project. Keep outputs/checkpoints under /scratch.
-$TrainCommand = 'if [ ! -d "/scratch/Mock_repo_mnlp" ]; then git clone https://github.com/YoussefBL25/Mock_repo_mnlp.git /scratch/Mock_repo_mnlp; fi && cd /scratch/Mock_repo_mnlp && python3 promptomatix/examples/scripts/multimodal_optimization.py'
+$TrainCommand = 'if [ ! -d "/scratch/Mock_repo_mnlp" ]; then git clone https://github.com/YoussefBL25/Mock_repo_mnlp.git /scratch/Mock_repo_mnlp; else cd /scratch/Mock_repo_mnlp && git pull; fi && cd /scratch/Mock_repo_mnlp && python3 promptomatix/examples/scripts/multimodal_optimization.py'
 
 Write-Output ">>> Submitting training job $JobName  (1 GPU)"
 
