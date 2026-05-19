@@ -20,7 +20,7 @@ GROUP="g54"                  # <-- YOUR TEAM, e.g. g07.
 # ==============================================
 
 # Edit this for your project. Keep outputs/checkpoints under /scratch.
-TRAIN_COMMAND='git config --global --add safe.directory /scratch/Mock_repo_mnlp && if [ ! -d "/scratch/Mock_repo_mnlp" ]; then git clone https://github.com/YoussefBL25/Mock_repo_mnlp.git /scratch/Mock_repo_mnlp; else cd /scratch/Mock_repo_mnlp && git pull; fi && cd /scratch/Mock_repo_mnlp && pip install -e promptomatix && python3 promptomatix/examples/scripts/multimodal_optimization.py'
+TRAIN_COMMAND='git config --global --add safe.directory /scratch/Mock_repo_mnlp && if [ ! -d "/scratch/Mock_repo_mnlp" ]; then git clone https://github.com/YoussefBL25/Mock_repo_mnlp.git /scratch/Mock_repo_mnlp; else cd /scratch/Mock_repo_mnlp && git pull; fi && cd /scratch/Mock_repo_mnlp && pip install --ignore-installed -e promptomatix && python3 promptomatix/examples/scripts/multimodal_optimization.py'
 
 if [[ "${GASPAR}" == "gaspar" || -z "${GASPAR}" ]]; then
     echo "ERROR: edit submit_train.sh and set GASPAR to your EPFL GASPAR username." >&2
