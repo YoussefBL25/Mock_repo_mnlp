@@ -1,0 +1,23 @@
+# Agent workspaces and configuration
+.agents/
+.gemini/
+GEMINI.md
+
+# Virtual environments
+.conda/
+myenv/
+promptomatix_env/
+.venv/
+venv/
+env/
+
+# Python Cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.ipynb_checkpoints/
+
+# Local cache & data
+cache/
+graphify-out/

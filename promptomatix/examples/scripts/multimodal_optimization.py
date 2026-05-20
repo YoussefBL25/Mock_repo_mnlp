@@ -194,7 +194,11 @@ def simulate_optimization_loop():
 
     # 6. WRITE OUT OF CORE RUN REPORT
     # Write a comprehensive run report file summarizing the entire pipeline, all outputs, inputs, feedbacks, and comparisons.
-    output_dir = "/scratch/Mock_repo_mnlp/outputs"
+    if sys.platform.startswith("win"):
+        output_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "outputs"))
+    else:
+        output_dir = "/scratch/Mock_repo_mnlp/outputs"
+        
     if not os.path.exists(output_dir):
         os.makedirs(output_dir, exist_ok=True)
         
