@@ -1,0 +1,228 @@
+{
+  "status": "Success",
+  "engine_parameters": {
+    "output_fields": [
+      "output_prompt"
+    ],
+    "length_penalty_lambda": 0.005
+  },
+  "dataset": [
+    {
+      "concept": "Futuristic cyberpunk skyscraper inside a green rainforest dome, synthwave theme",
+      "image_context": true
+    },
+    {
+      "concept": "A vintage Victorian library floating in outer space, warm cozy fireplace",
+      "image_context": true
+    },
+    {
+      "concept": "Minimalist geometric sculpture on an empty white beach, soft morning light",
+      "image_context": true
+    }
+  ],
+  "baseline_candidate": {
+    "candidate_id": 1,
+    "template": "A photo of a {concept}.",
+    "avg_score": 0.2684743232392366
+  },
+  "winner_candidate": {
+    "candidate_id": 1,
+    "template": "A photo of a {concept}.",
+    "avg_score": 0.2684743232392366
+  },
+  "improvement_metric": "0.0000 (Baseline is already optimal)",
+  "full_evaluation_records": [
+    {
+      "candidate_id": 1,
+      "template": "A photo of a {concept}.",
+      "avg_score": 0.2684743232392366,
+      "samples": [
+        {
+          "concept": "Futuristic cyberpunk skyscraper inside a green rainforest dome, synthwave theme",
+          "rendered_prompt": "A photo of a Futuristic cyberpunk skyscraper inside a green rainforest dome, synthwave theme.",
+          "alignment_ratio": 1.0,
+          "base_score": 1.0,
+          "vision_token_economics": {
+            "template_word_count": 5,
+            "static_image_tokens": 258,
+            "total_evaluation_tokens": 263
+          },
+          "length_penalty_factor": 0.2684743232392366,
+          "final_score": 0.2684743232392366,
+          "vlm_judge_feedback": {
+            "adherence": 1.0,
+            "aesthetic": 0.7,
+            "artifacts": 0.98,
+            "critique": "The generated image shows high visual relevance to the concept. Adherence score is based on the semantic match ratio. Aesthetic rendering is highly optimized with quality tags."
+          }
+        },
+        {
+          "concept": "A vintage Victorian library floating in outer space, warm cozy fireplace",
+          "rendered_prompt": "A photo of a A vintage Victorian library floating in outer space, warm cozy fireplace.",
+          "alignment_ratio": 1.0,
+          "base_score": 1.0,
+          "vision_token_economics": {
+            "template_word_count": 5,
+            "static_image_tokens": 258,
+            "total_evaluation_tokens": 263
+          },
+          "length_penalty_factor": 0.2684743232392366,
+          "final_score": 0.2684743232392366,
+          "vlm_judge_feedback": {
+            "adherence": 1.0,
+            "aesthetic": 0.7,
+            "artifacts": 0.98,
+            "critique": "The generated image shows high visual relevance to the concept. Adherence score is based on the semantic match ratio. Aesthetic rendering is highly optimized with quality tags."
+          }
+        },
+        {
+          "concept": "Minimalist geometric sculpture on an empty white beach, soft morning light",
+          "rendered_prompt": "A photo of a Minimalist geometric sculpture on an empty white beach, soft morning light.",
+          "alignment_ratio": 1.0,
+          "base_score": 1.0,
+          "vision_token_economics": {
+            "template_word_count": 5,
+            "static_image_tokens": 258,
+            "total_evaluation_tokens": 263
+          },
+          "length_penalty_factor": 0.2684743232392366,
+          "final_score": 0.2684743232392366,
+          "vlm_judge_feedback": {
+            "adherence": 1.0,
+            "aesthetic": 0.7,
+            "artifacts": 0.98,
+            "critique": "The generated image shows high visual relevance to the concept. Adherence score is based on the semantic match ratio. Aesthetic rendering is highly optimized with quality tags."
+          }
+        }
+      ]
+    },
+    {
+      "candidate_id": 2,
+      "template": "A stunning, highly detailed professional architectural photograph capturing a {concept}. Cinematic composition, rich photorealism, volume lighting, captured on 35mm lens.",
+      "avg_score": 0.24907530463166816,
+      "samples": [
+        {
+          "concept": "Futuristic cyberpunk skyscraper inside a green rainforest dome, synthwave theme",
+          "rendered_prompt": "A stunning, highly detailed professional architectural photograph capturing a Futuristic cyberpunk skyscraper inside a green rainforest dome, synthwave theme. Cinematic composition, rich photorealism, volume lighting, captured on 35mm lens.",
+          "alignment_ratio": 1.0,
+          "base_score": 1.0,
+          "vision_token_economics": {
+            "template_word_count": 20,
+            "static_image_tokens": 258,
+            "total_evaluation_tokens": 278
+          },
+          "length_penalty_factor": 0.24907530463166816,
+          "final_score": 0.24907530463166816,
+          "vlm_judge_feedback": {
+            "adherence": 1.0,
+            "aesthetic": 0.95,
+            "artifacts": 0.98,
+            "critique": "The generated image shows high visual relevance to the concept. Adherence score is based on the semantic match ratio. Aesthetic rendering is highly optimized with quality tags."
+          }
+        },
+        {
+          "concept": "A vintage Victorian library floating in outer space, warm cozy fireplace",
+          "rendered_prompt": "A stunning, highly detailed professional architectural photograph capturing a A vintage Victorian library floating in outer space, warm cozy fireplace. Cinematic composition, rich photorealism, volume lighting, captured on 35mm lens.",
+          "alignment_ratio": 1.0,
+          "base_score": 1.0,
+          "vision_token_economics": {
+            "template_word_count": 20,
+            "static_image_tokens": 258,
+            "total_evaluation_tokens": 278
+          },
+          "length_penalty_factor": 0.24907530463166816,
+          "final_score": 0.24907530463166816,
+          "vlm_judge_feedback": {
+            "adherence": 1.0,
+            "aesthetic": 0.95,
+            "artifacts": 0.98,
+            "critique": "The generated image shows high visual relevance to the concept. Adherence score is based on the semantic match ratio. Aesthetic rendering is highly optimized with quality tags."
+          }
+        },
+        {
+          "concept": "Minimalist geometric sculpture on an empty white beach, soft morning light",
+          "rendered_prompt": "A stunning, highly detailed professional architectural photograph capturing a Minimalist geometric sculpture on an empty white beach, soft morning light. Cinematic composition, rich photorealism, volume lighting, captured on 35mm lens.",
+          "alignment_ratio": 1.0,
+          "base_score": 1.0,
+          "vision_token_economics": {
+            "template_word_count": 20,
+            "static_image_tokens": 258,
+            "total_evaluation_tokens": 278
+          },
+          "length_penalty_factor": 0.24907530463166816,
+          "final_score": 0.24907530463166816,
+          "vlm_judge_feedback": {
+            "adherence": 1.0,
+            "aesthetic": 0.95,
+            "artifacts": 0.98,
+            "critique": "The generated image shows high visual relevance to the concept. Adherence score is based on the semantic match ratio. Aesthetic rendering is highly optimized with quality tags."
+          }
+        }
+      ]
+    },
+    {
+      "candidate_id": 3,
+      "template": "A vector logo illustrating {concept} on a red square.",
+      "avg_score": 0.2631581754560287,
+      "samples": [
+        {
+          "concept": "Futuristic cyberpunk skyscraper inside a green rainforest dome, synthwave theme",
+          "rendered_prompt": "A vector logo illustrating Futuristic cyberpunk skyscraper inside a green rainforest dome, synthwave theme on a red square.",
+          "alignment_ratio": 1.0,
+          "base_score": 1.0,
+          "vision_token_economics": {
+            "template_word_count": 9,
+            "static_image_tokens": 258,
+            "total_evaluation_tokens": 267
+          },
+          "length_penalty_factor": 0.2631581754560287,
+          "final_score": 0.2631581754560287,
+          "vlm_judge_feedback": {
+            "adherence": 1.0,
+            "aesthetic": 0.7,
+            "artifacts": 0.98,
+            "critique": "The generated image shows high visual relevance to the concept. Adherence score is based on the semantic match ratio. Aesthetic rendering is highly optimized with quality tags."
+          }
+        },
+        {
+          "concept": "A vintage Victorian library floating in outer space, warm cozy fireplace",
+          "rendered_prompt": "A vector logo illustrating A vintage Victorian library floating in outer space, warm cozy fireplace on a red square.",
+          "alignment_ratio": 1.0,
+          "base_score": 1.0,
+          "vision_token_economics": {
+            "template_word_count": 9,
+            "static_image_tokens": 258,
+            "total_evaluation_tokens": 267
+          },
+          "length_penalty_factor": 0.2631581754560287,
+          "final_score": 0.2631581754560287,
+          "vlm_judge_feedback": {
+            "adherence": 1.0,
+            "aesthetic": 0.7,
+            "artifacts": 0.98,
+            "critique": "The generated image shows high visual relevance to the concept. Adherence score is based on the semantic match ratio. Aesthetic rendering is highly optimized with quality tags."
+          }
+        },
+        {
+          "concept": "Minimalist geometric sculpture on an empty white beach, soft morning light",
+          "rendered_prompt": "A vector logo illustrating Minimalist geometric sculpture on an empty white beach, soft morning light on a red square.",
+          "alignment_ratio": 1.0,
+          "base_score": 1.0,
+          "vision_token_economics": {
+            "template_word_count": 9,
+            "static_image_tokens": 258,
+            "total_evaluation_tokens": 267
+          },
+          "length_penalty_factor": 0.2631581754560287,
+          "final_score": 0.2631581754560287,
+          "vlm_judge_feedback": {
+            "adherence": 1.0,
+            "aesthetic": 0.7,
+            "artifacts": 0.98,
+            "critique": "The generated image shows high visual relevance to the concept. Adherence score is based on the semantic match ratio. Aesthetic rendering is highly optimized with quality tags."
+          }
+        }
+      ]
+    }
+  ]
+}

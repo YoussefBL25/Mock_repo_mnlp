@@ -1571,14 +1571,14 @@ class MetricsManager:
                     
                 # 2. Contact local VLM Judge to evaluate prompt adherence and aesthetics
                 vlm_payload = {
-                    "model": "Qwen/Qwen2-VL-72B-Instruct",
+                    "model": "Qwen/Qwen2-VL-7B-Instruct",
                     "messages": [
                         {
                             "role": "user",
                             "content": [
                                 {
                                     "type": "text",
-                                    "text": f"Evaluate the adherence of this generated image to the following concept description: '{concept_text}'. Rate: 1) Adherence (0 to 1), 2) Aesthetics (0 to 1), 3) Artifacts (0 to 1). Respond strictly with valid JSON:\n{{\"adherence_score\": 0.0, \"aesthetic_score\": 0.0, \"artifact_score\": 0.0}}"
+                                    "text": f"You are an expert visual evaluation judge. Analyze the provided image against this prompt: '{concept_text}'. Rate these three criteria from 0.0 (poor) to 1.0 (excellent):\n1) adherence_score: How closely does the image content match the prompt's core semantic details?\n2) aesthetic_score: Rate the visual quality, details, contrast, composition, and aesthetics.\n3) artifact_score: Rate the absence of weird artifacts, bad anatomy, blur, or rendering defects (1.0 means no defects, 0.0 means completely distorted).\n\nYou MUST respond strictly in valid JSON format inside a ```json``` codeblock like this:\n```json\n{{\n  \"adherence_score\": 0.85,\n  \"aesthetic_score\": 0.90,\n  \"artifact_score\": 0.95\n}}\n```\nDo not write any introductory or concluding text. Output only the JSON block."
                                 },
                                 {
                                     "type": "image_url",
@@ -1596,9 +1596,14 @@ class MetricsManager:
                 vlm_resp = requests.post(vlm_url, json=vlm_payload, headers=headers, timeout=30)
                 if vlm_resp.status_code == 200:
                     raw_content = vlm_resp.json()["choices"][0]["message"]["content"].strip()
-                    if "```json" in raw_content:
-                        raw_content = raw_content.split("```json")[1].split("```")[0].strip()
-                    eval_data = json.loads(raw_content)
+                    # Clean up common markdown block issues
+                    clean_content = raw_content.strip()
+                    if "```json" in clean_content:
+                        clean_content = clean_content.split("```json")[1].split("```")[0].strip()
+                    elif "```" in clean_content:
+                        clean_content = clean_content.split("```")[1].split("```")[0].strip()
+                    
+                    eval_data = json.loads(clean_content)
                     
                     print(f"🤖 [VLM JUDGE FEEDBACK COMPLETED]")
                     print(f"   Raw Judge Content:\n{raw_content}")
@@ -1638,7 +1643,7 @@ class MetricsManager:
                 else:
                     critique_msg = "The generated image accurately reflects the semantic details of the target concept description. Composition and aesthetic parameters are well-integrated."
                 
-                print(f"🤖 [VLM JUDGE FEEDBACK (SIMULATED FALLBACK)]")
+                print(f"🤖 [VLM JUDGE FEEDBACK (SIMULATED FALLBACK)] (Reason: {str(conn_err)})")
                 print(f"   Scores: Adherence: {sim_adherence:.2f} | Aesthetics: {sim_aesthetic:.2f} | Artifacts: {sim_artifacts:.2f}")
                 print(f"   Critique: \"{critique_msg}\"")
                 

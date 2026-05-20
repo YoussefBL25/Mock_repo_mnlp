@@ -40,8 +40,8 @@ def load_pipeline():
         
         # VRAM optimization configurations
         pipe.enable_attention_slicing()
-        if hasattr(pipe, "enable_model_cpu_offload"):
-            pipe.enable_model_cpu_offload()
+        # if hasattr(pipe, "enable_model_cpu_offload"):
+        #     pipe.enable_model_cpu_offload()
             
         print(f"✅ Diffusion Pipeline ({model_id}) Loaded Successfully on GPU!")
     except Exception as e:
