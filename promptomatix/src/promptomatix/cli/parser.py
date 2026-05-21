@@ -42,6 +42,10 @@ def parse_args() -> Dict:
                            help="Model temperature (default: 0.7)")
     model_group.add_argument("--max_tokens", type=int, 
                            help="Maximum tokens for model output (default: 4000)")
+    model_group.add_argument("--config_max_tokens", type=int, 
+                           help="Maximum tokens for config model output (default: 2048)")
+    model_group.add_argument("--config_temperature", type=float, 
+                           help="Config model temperature (default: 0.7)")
     model_group.add_argument("--dspy_module", type=str, help="DSPy module")
     model_group.add_argument("--backend", type=str, 
                            help="Optimization backend ('dspy' or 'simple_meta_prompt', default: 'simple_meta_prompt')")

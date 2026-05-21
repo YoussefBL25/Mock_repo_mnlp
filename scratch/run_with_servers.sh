@@ -79,6 +79,9 @@ python3 -m promptomatix.main \
   --config_model_api_key "mock" \
   --config_model_provider "openai" \
   --synthetic_data_size 10 \
+  --max_tokens 2048 \
+  --config_max_tokens 2048 \
+  --config_temperature 0.7 \
   --backend "simple_meta_prompt" \
   --sample_data '[{"concept": "Futuristic cyberpunk skyscraper inside a green rainforest dome, synthwave theme"}, {"concept": "A vintage Victorian library floating in outer space, warm cozy fireplace"}, {"concept": "Minimalist geometric sculpture on an empty white beach, soft morning light"}]'
 
