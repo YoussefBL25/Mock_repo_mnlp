@@ -904,7 +904,7 @@ class Config:
                 'default_model': None
             },
             ModelProvider.LOCAL: {
-                'api_base': 'http://localhost:8000/v1',
+                'api_base': 'http://127.0.0.1:8000/v1',
                 'env_key': None,
                 'default_model': None
             },
@@ -938,7 +938,7 @@ class Config:
                 'default_model': None
             },
             ModelProvider.LOCAL: {
-                'api_base': 'http://localhost:8000/v1',
+                'api_base': 'http://127.0.0.1:8000/v1',
                 'env_key': None,
                 'default_model': None
             },

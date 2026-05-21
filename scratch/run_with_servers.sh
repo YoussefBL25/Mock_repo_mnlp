@@ -11,6 +11,7 @@ mkdir -p /scratch/Mock_repo_mnlp/outputs/generated_images
 # 1. Start vLLM Server in background
 echo "⏳ Launching local vLLM VLM Server (Qwen2-VL-7B-Instruct)..."
 vllm serve Qwen/Qwen2-VL-7B-Instruct \
+  --host 127.0.0.1 \
   --port 8000 \
   --gpu-memory-utilization 0.55 \
   --max-model-len 4096 \
@@ -43,7 +44,7 @@ def wait_for_port(port, name, timeout=300):
     print(f"Waiting for {name} on port {port}...", flush=True)
     while time.time() - start < timeout:
         try:
-            with socket.create_connection(("localhost", port), timeout=2):
+            with socket.create_connection(("127.0.0.1", port), timeout=2):
                 print(f"✅ {name} is online!", flush=True)
                 return True
         except OSError:

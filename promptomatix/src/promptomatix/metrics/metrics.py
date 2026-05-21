@@ -1533,8 +1533,8 @@ class MetricsManager:
             # Attempt to trigger local Image Generation API
             # Standard OpenAI compatible or local custom server on GPU 1 (Port 8001)
             # Default fallback URL
-            diffusion_url = os.environ.get("LOCAL_DIFFUSION_URL", "http://localhost:8001/v1/images/generations")
-            vlm_url = os.environ.get("LOCAL_VLM_URL", "http://localhost:8000/v1/chat/completions")
+            diffusion_url = os.environ.get("LOCAL_DIFFUSION_URL", "http://127.0.0.1:8001/v1/images/generations")
+            vlm_url = os.environ.get("LOCAL_VLM_URL", "http://127.0.0.1:8000/v1/chat/completions")
             
             try:
                 # 1. Contact local diffusion pipeline to generate image
