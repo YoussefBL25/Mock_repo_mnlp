@@ -70,11 +70,11 @@ python3 -m promptomatix.main \
   --task_type "image_generation" \
   --input_fields concept \
   --output_fields output_prompt \
-  --model_name "Qwen/Qwen2-VL-7B-Instruct" \
+  --model_name "openai/Qwen/Qwen2-VL-7B-Instruct" \
   --model_api_base "http://127.0.0.1:8000/v1" \
   --model_api_key "mock" \
   --model_provider "openai" \
-  --config_model_name "Qwen/Qwen2-VL-7B-Instruct" \
+  --config_model_name "openai/Qwen/Qwen2-VL-7B-Instruct" \
   --config_model_api_base "http://127.0.0.1:8000/v1" \
   --config_model_api_key "mock" \
   --config_model_provider "openai" \
