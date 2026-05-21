@@ -681,8 +681,12 @@ class PromptOptimizer:
         if model == "":
             model = self.config.config_model_name
         from openai import OpenAI
-        
-        # Configure OpenAI client
+
+        for prefix in ("openai/", "local/", "azure/", "togetherai/", "databricks/"):
+            if model.startswith(prefix):
+                model = model[len(prefix):]
+                break
+
         client = OpenAI(
             api_key=self.config.config_model_api_key,
             base_url=self.config.config_model_api_base if self.config.config_model_api_base else None
