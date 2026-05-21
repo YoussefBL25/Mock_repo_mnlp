@@ -53,7 +53,7 @@ python3 -m vllm.entrypoints.openai.api_server \
     --model "$VLM_MODEL" \
     --port 8000 \
     --gpu-memory-utilization 0.65 \
-    --max-model-len 32768 \
+    --max-model-len 16384 \
     --served-model-name "Qwen/Qwen2-VL-7B-Instruct" \
     --trust-remote-code \
     --disable-log-requests \

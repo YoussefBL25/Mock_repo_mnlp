@@ -81,7 +81,7 @@ def main():
         config_model_provider=model_provider,
         config_model_api_key=api_key,
         config_model_api_base=api_base,
-        config_max_tokens=32000,
+        config_max_tokens=12000,
         backend="simple_meta_prompt",
         synthetic_data_size=synth_size,
     )
