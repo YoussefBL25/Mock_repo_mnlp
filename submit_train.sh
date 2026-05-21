@@ -15,12 +15,22 @@
 set -euo pipefail
 
 # ============== EDIT THESE LINES ==============
-GASPAR="benlasso"              # <-- YOUR GASPAR EPFL username.
+GASPAR="moraga"              # <-- YOUR GASPAR EPFL username.
 GROUP="g54"                  # <-- YOUR TEAM, e.g. g07.
+
+# No API key needed — everything runs locally on the A100.
+# scratch/launch_pipeline.sh starts:
+#   port 8000  vLLM  Qwen2-VL-7B-Instruct  (VLM judge + optimizer LLM, ~26 GB)
+#   port 8001  SDXL diffusion server        (~7 GB)
+#
+# Optional: override the default models by adding --environment flags below, e.g.
+#   --environment VLM_MODEL=/shared-ro/models/Qwen2-VL-7B-Instruct
+#   --environment DIFFUSION_MODEL=stabilityai/stable-diffusion-xl-base-1.0
+#   --environment N_FEEDBACK_ITERATIONS=3
+#   --environment SYNTHETIC_DATA_SIZE=30
 # ==============================================
 
-# Edit this for your project. Keep outputs/checkpoints under /scratch.
-TRAIN_COMMAND='git config --global --add safe.directory /scratch/Mock_repo_mnlp && if [ ! -d "/scratch/Mock_repo_mnlp" ]; then git clone https://github.com/YoussefBL25/Mock_repo_mnlp.git /scratch/Mock_repo_mnlp; else cd /scratch/Mock_repo_mnlp && git pull; fi && cd /scratch/Mock_repo_mnlp && pip install -e promptomatix --no-deps && pip install dspy rouge langdetect backoff ujson litellm && python3 promptomatix/examples/scripts/multimodal_optimization.py'
+TRAIN_COMMAND='git config --global --add safe.directory /scratch/Mock_repo_mnlp && if [ ! -d "/scratch/Mock_repo_mnlp" ]; then git clone https://github.com/YoussefBL25/Mock_repo_mnlp.git /scratch/Mock_repo_mnlp; else cd /scratch/Mock_repo_mnlp && git fetch origin && git reset --hard origin/master; fi && cd /scratch/Mock_repo_mnlp && pip install -e promptomatix --no-deps && pip install dspy rouge langdetect backoff ujson litellm flask diffusers accelerate && bash scratch/launch_pipeline.sh'
 
 if [[ "${GASPAR}" == "gaspar" || -z "${GASPAR}" ]]; then
     echo "ERROR: edit submit_train.sh and set GASPAR to your EPFL GASPAR username." >&2
@@ -62,6 +72,8 @@ runai submit \
   --environment HF_HOME=/scratch/hf_cache \
   --environment HF_HUB_ENABLE_HF_TRANSFER=1 \
   --environment WANDB_DIR=/scratch/wandb \
+  --environment OPENAI_API_KEY="${OPENAI_API_KEY}" \
+  --environment OPTIMIZER_API_KEY="${OPENAI_API_KEY}" \
   --environment TRAIN_COMMAND="${TRAIN_COMMAND}" \
   --existing-pvc "claimname=${SCRATCH_PVC},path=/scratch" \
   --existing-pvc "claimname=${SHARED_RO_PVC},path=/shared-ro" \

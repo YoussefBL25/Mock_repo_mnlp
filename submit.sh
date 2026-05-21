@@ -49,7 +49,7 @@
 set -euo pipefail
 
 # ============== EDIT THESE LINES ==============
-GASPAR="benlasso"              # <-- For local runs: your EPFL username. TAs may replace this for grading.
+GASPAR="moraga"              # <-- For local runs: your EPFL username. TAs may replace this for grading.
 GROUP="g54"                  # <-- REQUIRED FOR SUBMISSION: your team, e.g. g07.
 # ==============================================
 
