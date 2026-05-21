@@ -15,12 +15,23 @@
 set -euo pipefail
 
 # ============== EDIT THESE LINES ==============
-GASPAR="benlasso"              # <-- YOUR GASPAR EPFL username.
+GASPAR="moraga"              # <-- YOUR GASPAR EPFL username.
 GROUP="g54"                  # <-- YOUR TEAM, e.g. g07.
+
+# No API key needed — everything runs locally on the A100.
+# scratch/launch_pipeline.sh starts:
+#   port 8000  vLLM  Qwen2-VL-7B-Instruct  (VLM judge + optimizer LLM, ~26 GB)
+#   port 8001  SDXL diffusion server        (~7 GB)
+#
+# Optional: override the default models by adding --environment flags below, e.g.
+#   --environment VLM_MODEL=/shared-ro/models/Qwen2-VL-7B-Instruct
+#   --environment DIFFUSION_MODEL=stabilityai/stable-diffusion-xl-base-1.0
+#   --environment N_FEEDBACK_ITERATIONS=3
+#   --environment SYNTHETIC_DATA_SIZE=30
 # ==============================================
 
 # Edit this for your project. Keep outputs/checkpoints under /scratch.
-TRAIN_COMMAND='git config --global --add safe.directory /scratch/Mock_repo_mnlp && if [ ! -d "/scratch/Mock_repo_mnlp" ]; then git clone https://github.com/YoussefBL25/Mock_repo_mnlp.git /scratch/Mock_repo_mnlp && cd /scratch/Mock_repo_mnlp && git checkout ipv4-loopback-fix; else cd /scratch/Mock_repo_mnlp && git reset --hard HEAD && git checkout ipv4-loopback-fix && git fetch origin && git reset --hard origin/ipv4-loopback-fix; fi && cd /scratch/Mock_repo_mnlp && pip install -e promptomatix --no-deps && pip install --ignore-installed blinker && pip install dspy rouge langdetect backoff ujson litellm flask diffusers accelerate && chmod +x scratch/run_with_servers.sh && export LOCAL_VLM_URL="http://127.0.0.1:8000/v1/chat/completions" && export LOCAL_DIFFUSION_URL="http://127.0.0.1:8001/v1/images/generations" && export OPENAI_API_BASE="http://127.0.0.1:8000/v1" && ./scratch/run_with_servers.sh'
+TRAIN_COMMAND='git config --global --add safe.directory /scratch/Mock_repo_mnlp && if [ ! -d "/scratch/Mock_repo_mnlp" ]; then git clone https://github.com/YoussefBL25/Mock_repo_mnlp.git /scratch/Mock_repo_mnlp; else cd /scratch/Mock_repo_mnlp && git remote set-url origin https://github.com/YoussefBL25/Mock_repo_mnlp.git && git fetch origin && git reset --hard HEAD && git clean -fd && git checkout -f master && git reset --hard origin/master; fi && cd /scratch/Mock_repo_mnlp && pip install -e promptomatix --no-deps && pip install blinker --ignore-installed && pip install anthropic dspy rouge langdetect backoff ujson litellm flask diffusers accelerate && cp scratch/run_with_servers.sh /tmp/run_with_servers.sh && bash /tmp/run_with_servers.sh'
 
 if [[ "${GASPAR}" == "gaspar" || -z "${GASPAR}" ]]; then
     echo "ERROR: edit submit_train.sh and set GASPAR to your EPFL GASPAR username." >&2

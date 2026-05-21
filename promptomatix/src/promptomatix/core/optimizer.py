@@ -629,9 +629,8 @@ class PromptOptimizer:
             if hasattr(provider, 'value'):
                 provider = provider.value
             
-            if provider.lower() == 'openai':
-                oai_ouput = self._call_openai_api(prompt, model)
-                return oai_ouput
+            if provider.lower() in ('openai', 'local', 'databricks', 'togetherai'):
+                return self._call_openai_api(prompt, model)
             elif provider.lower() == 'anthropic':
                 return self._call_anthropic_api(prompt)
             elif provider.lower() == 'gemini':
@@ -709,8 +708,12 @@ class PromptOptimizer:
             model = model[len("openai/"):]
             
         from openai import OpenAI
-        
-        # Configure OpenAI client
+
+        for prefix in ("openai/", "local/", "azure/", "togetherai/", "databricks/"):
+            if model.startswith(prefix):
+                model = model[len(prefix):]
+                break
+
         client = OpenAI(
             api_key=self.config.config_model_api_key,
             base_url=self.config.config_model_api_base if self.config.config_model_api_base else None
