@@ -129,6 +129,16 @@ class PromptOptimizer:
         try:
             sample_data, sample_data_group = self._prepare_sample_data()
             template = {key: '...' for key in sample_data.keys()}
+            
+            # Ensure all input and output fields are included in the template
+            input_fields = self._parse_fields(self.config.input_fields)
+            output_fields = self._parse_fields(self.config.output_fields)
+            for field in input_fields:
+                if field not in template:
+                    template[field] = '...'
+            for field in output_fields:
+                if field not in template:
+                    template[field] = '...'
 
             # On average, 4 characters make up a token
             no_of_toks_in_sample_data = len(str(sample_data))/4
@@ -264,12 +274,24 @@ class PromptOptimizer:
         )
 
     def _clean_llm_response(self, response: str) -> str:
-        """Clean and format LLM response."""
-        if "```json" in response:
-            response = response.split("```json")[1].strip()
+        """Clean and format LLM response, extracting content from fenced blocks if present."""
+        response = response.strip()
         if "```" in response:
-            response = response.split("```")[0].strip()
-        return response.strip()
+            parts = response.split("```")
+            if len(parts) >= 2:
+                content = parts[1].strip()
+                # Strip any language specifiers from the first line
+                lines = content.split('\n')
+                if lines:
+                    first_line = lines[0].strip().lower()
+                    if first_line in ['json', 'xml', 'text', 'html', 'python', 'yaml', 'yml', 'bash', 'sh']:
+                        content = '\n'.join(lines[1:]).strip()
+                    elif any(first_line.startswith(lang) for lang in ['json', 'xml', 'text', 'html', 'python', 'yaml', 'yml']):
+                        if len(first_line) < 10:  # small length safeguard
+                            content = '\n'.join(lines[1:]).strip()
+                return content
+        return response
+
 
     def run(self, initial_flag: bool = True) -> Dict:
         """
@@ -680,6 +702,11 @@ class PromptOptimizer:
         """
         if model == "":
             model = self.config.config_model_name
+        
+        # Strip provider prefix if present (e.g. "openai/") to match local vLLM served model name
+        if model.startswith("openai/"):
+            model = model[len("openai/"):]
+            
         from openai import OpenAI
 
         for prefix in ("openai/", "local/", "azure/", "togetherai/", "databricks/"):
@@ -894,7 +921,14 @@ class PromptOptimizer:
     
     def get_final_eval_metrics(self):
         """Get final evaluation metrics for the task type."""
+        if isinstance(self.config.output_fields, str):
+            output_fields = ast.literal_eval(self.config.output_fields)
+        else:
+            output_fields = self.config.output_fields
+        
+        MetricsManager.configure(output_fields)
         return MetricsManager.get_final_eval_metrics(self.config.task_type)
+
 
     
     def _validate_synthetic_data(self, data: Dict, task: str) -> Tuple[bool, str]:

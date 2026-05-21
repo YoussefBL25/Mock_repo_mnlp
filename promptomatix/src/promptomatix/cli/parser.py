@@ -34,10 +34,18 @@ def parse_args() -> Dict:
     model_group.add_argument("--model_api_key", type=str, help="Model API key")
     model_group.add_argument("--model_api_base", type=str, help="Model API base")
     model_group.add_argument("--model_provider", type=str, help="Model provider")
+    model_group.add_argument("--config_model_name", type=str, help="Config model name")
+    model_group.add_argument("--config_model_api_key", type=str, help="Config model API key")
+    model_group.add_argument("--config_model_api_base", type=str, help="Config model API base")
+    model_group.add_argument("--config_model_provider", type=str, help="Config model provider")
     model_group.add_argument("--temperature", type=float, 
                            help="Model temperature (default: 0.7)")
     model_group.add_argument("--max_tokens", type=int, 
                            help="Maximum tokens for model output (default: 4000)")
+    model_group.add_argument("--config_max_tokens", type=int, 
+                           help="Maximum tokens for config model output (default: 2048)")
+    model_group.add_argument("--config_temperature", type=float, 
+                           help="Config model temperature (default: 0.7)")
     model_group.add_argument("--dspy_module", type=str, help="DSPy module")
     model_group.add_argument("--backend", type=str, 
                            help="Optimization backend ('dspy' or 'simple_meta_prompt', default: 'simple_meta_prompt')")

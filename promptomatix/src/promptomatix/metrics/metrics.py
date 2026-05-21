@@ -1533,8 +1533,8 @@ class MetricsManager:
             # Attempt to trigger local Image Generation API
             # Standard OpenAI compatible or local custom server on GPU 1 (Port 8001)
             # Default fallback URL
-            diffusion_url = os.environ.get("LOCAL_DIFFUSION_URL", "http://localhost:8001/v1/images/generations")
-            vlm_url = os.environ.get("LOCAL_VLM_URL", "http://localhost:8000/v1/chat/completions")
+            diffusion_url = os.environ.get("LOCAL_DIFFUSION_URL", "http://127.0.0.1:8001/v1/images/generations")
+            vlm_url = os.environ.get("LOCAL_VLM_URL", "http://127.0.0.1:8000/v1/chat/completions")
             
             try:
                 # 1. Contact local diffusion pipeline to generate image
@@ -1578,7 +1578,7 @@ class MetricsManager:
                             "content": [
                                 {
                                     "type": "text",
-                                    "text": f"You are an expert visual evaluation judge. Analyze the provided image against this prompt: '{concept_text}'. Rate these three criteria from 0.0 (poor) to 1.0 (excellent):\n1) adherence_score: How closely does the image content match the prompt's core semantic details?\n2) aesthetic_score: Rate the visual quality, details, contrast, composition, and aesthetics.\n3) artifact_score: Rate the absence of weird artifacts, bad anatomy, blur, or rendering defects (1.0 means no defects, 0.0 means completely distorted).\n\nYou MUST respond strictly in valid JSON format inside a ```json``` codeblock like this:\n```json\n{{\n  \"adherence_score\": 0.85,\n  \"aesthetic_score\": 0.90,\n  \"artifact_score\": 0.95\n}}\n```\nDo not write any introductory or concluding text. Output only the JSON block."
+                                    "text": f"You are an expert visual evaluation judge. Analyze the provided image against this prompt: '{concept_text}'. Rate these three criteria from 0.0 (poor) to 1.0 (excellent):\n1) adherence_score: How closely does the image content match the prompt's core semantic details?\n2) aesthetic_score: Rate the visual quality, details, contrast, composition, and aesthetics.\n3) artifact_score: Rate the absence of weird artifacts, bad anatomy, blur, or rendering defects (1.0 means no defects, 0.0 means completely distorted).\n\nYou MUST respond strictly in valid JSON format inside a ```json``` codeblock like this:\n```json\n{{\n  \"adherence_score\": <float between 0.0 and 1.0>,\n  \"aesthetic_score\": <float between 0.0 and 1.0>,\n  \"artifact_score\": <float between 0.0 and 1.0>\n}}\n```\nDo not write any introductory or concluding text. Output only the JSON block."
                                 },
                                 {
                                     "type": "image_url",

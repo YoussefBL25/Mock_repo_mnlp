@@ -19,6 +19,7 @@ export LOCAL_DIFFUSION_URL="http://localhost:8001/v1/images/generations"
 # 1. Start vLLM Server in background
 echo "⏳ Launching local vLLM VLM Server (Qwen2-VL-7B-Instruct)..."
 vllm serve Qwen/Qwen2-VL-7B-Instruct \
+  --host 127.0.0.1 \
   --port 8000 \
   --gpu-memory-utilization 0.55 \
   --max-model-len 8192 \
@@ -51,7 +52,7 @@ def wait_for_port(port, name, timeout=300):
     print(f"Waiting for {name} on port {port}...", flush=True)
     while time.time() - start < timeout:
         try:
-            with socket.create_connection(("localhost", port), timeout=2):
+            with socket.create_connection(("127.0.0.1", port), timeout=2):
                 print(f"✅ {name} is online!", flush=True)
                 return True
         except OSError:
@@ -71,7 +72,27 @@ echo "🎉 BOTH SERVERS ONLINE! EXECUTING OPTIMIZER PIPELINE"
 echo "========================================================="
 
 # 4. Run the actual optimizer!
-python3 promptomatix/examples/scripts/multimodal_optimization.py
+python3 -m promptomatix.main \
+  --raw_input "A photo of a {concept}." \
+  --task "A photo of a {concept}." \
+  --task_type "image_generation" \
+  --input_fields concept \
+  --output_fields output_prompt \
+  --model_name "openai/Qwen/Qwen2-VL-7B-Instruct" \
+  --model_api_base "http://127.0.0.1:8000/v1" \
+  --model_api_key "mock" \
+  --model_provider "openai" \
+  --config_model_name "openai/Qwen/Qwen2-VL-7B-Instruct" \
+  --config_model_api_base "http://127.0.0.1:8000/v1" \
+  --config_model_api_key "mock" \
+  --config_model_provider "openai" \
+  --synthetic_data_size 10 \
+  --max_tokens 2048 \
+  --config_max_tokens 2048 \
+  --config_temperature 0.7 \
+  --backend "simple_meta_prompt" \
+  --sample_data '[{"concept": "Futuristic cyberpunk skyscraper inside a green rainforest dome, synthwave theme", "output_prompt": "Futuristic synthwave cyberpunk skyscraper rising inside a massive bioluminescent green rainforest glass dome, dramatic lighting, highly detailed digital art"}, {"concept": "A vintage Victorian library floating in outer space, warm cozy fireplace", "output_prompt": "A warm cozy vintage Victorian library floating in outer space, stars visible through giant glass windows, glowing fireplace, oil painting style"}, {"concept": "Minimalist geometric sculpture on an empty white beach, soft morning light", "output_prompt": "A minimalist geometric sculpture standing on a vast empty white sand beach, illuminated by soft golden morning sunlight, photorealistic"}]'
+
 
 echo "========================================================="
 echo "🎉 PIPELINE COMPLETE!"

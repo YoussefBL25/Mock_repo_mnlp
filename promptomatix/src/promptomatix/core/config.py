@@ -298,8 +298,8 @@ class Config:
         self.model_api_base = kwargs.get('model_api_base')
         self.model_provider = kwargs.get('model_provider')
         self.temperature = kwargs.get('temperature', 0.7)  # Default temperature
-        self.max_tokens = kwargs.get('max_tokens', 4000)  # Default max tokens
-        self.config_max_tokens = kwargs.get('config_max_tokens', 14000)  # Default max tokens
+        self.max_tokens = kwargs.get('max_tokens', 2048)  # Default max tokens
+        self.config_max_tokens = kwargs.get('config_max_tokens', 2048)  # Default max tokens
         self.config_temperature = kwargs.get('config_temperature', 0.7)
         self.config_model_name = kwargs.get('config_model_name')
         self.config_model_provider = kwargs.get('config_model_provider')
@@ -904,7 +904,7 @@ class Config:
                 'default_model': None
             },
             ModelProvider.LOCAL: {
-                'api_base': 'http://localhost:8000/v1',
+                'api_base': 'http://127.0.0.1:8000/v1',
                 'env_key': None,
                 'default_model': None
             },
@@ -938,7 +938,7 @@ class Config:
                 'default_model': None
             },
             ModelProvider.LOCAL: {
-                'api_base': 'http://localhost:8000/v1',
+                'api_base': 'http://127.0.0.1:8000/v1',
                 'env_key': None,
                 'default_model': None
             },

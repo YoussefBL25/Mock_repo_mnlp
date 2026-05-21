@@ -22,8 +22,8 @@ for i, line in enumerate(lines):
 if start_idx is not None and end_idx is not None:
     print(f"Found target block: lines {start_idx + 1} to {end_idx + 1}")
     
-    new_block = """            diffusion_url = os.environ.get("LOCAL_DIFFUSION_URL", "http://localhost:8001/v1/images/generations")
-            vlm_url = os.environ.get("LOCAL_VLM_URL", "http://localhost:8000/v1/chat/completions")
+    new_block = """            diffusion_url = os.environ.get("LOCAL_DIFFUSION_URL", "http://127.0.0.1:8001/v1/images/generations")
+            vlm_url = os.environ.get("LOCAL_VLM_URL", "http://127.0.0.1:8000/v1/chat/completions")
             
             try:
                 # 1. Contact local diffusion pipeline to generate image

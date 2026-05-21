@@ -611,6 +611,10 @@ def generate_feedback(
         if not input_fields or not output_fields:
             raise ValueError("Input fields and output fields are required")
         
+        # Strip provider prefix if present (e.g. "openai/") to match local vLLM served model name
+        if model_name.startswith("openai/"):
+            model_name = model_name[len("openai/"):]
+            
         # Initialize OpenAI client for feedback generation
         openai_client = OpenAI(api_key=model_api_key, base_url=model_api_base)
         
@@ -873,10 +877,15 @@ def display_fancy_result(result: Dict) -> None:
             print(f"{Fore.WHITE}Initial Score: {Fore.RED}{initial_score:.4f}{Style.RESET_ALL}")
             print(f"{Fore.WHITE}Optimized Score: {Fore.GREEN}{optimized_score:.4f}{Style.RESET_ALL}")
             
-            if improvement > 0:
-                print(f"{Fore.WHITE}Improvement: {Fore.GREEN}+{improvement:.4f} ({improvement/initial_score*100:.1f}%){Style.RESET_ALL}")
+            if initial_score > 0:
+                pct_change = f" ({improvement/initial_score*100:.1f}%)"
             else:
-                print(f"{Fore.WHITE}Change: {Fore.RED}{improvement:.4f} ({improvement/initial_score*100:.1f}%){Style.RESET_ALL}")
+                pct_change = " (0.0%)"
+            
+            if improvement > 0:
+                print(f"{Fore.WHITE}Improvement: {Fore.GREEN}+{improvement:.4f}{pct_change}{Style.RESET_ALL}")
+            else:
+                print(f"{Fore.WHITE}Change: {Fore.RED}{improvement:.4f}{pct_change}{Style.RESET_ALL}")
         
         # Cost and Time
         if 'cost' in metrics:
