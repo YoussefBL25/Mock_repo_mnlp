@@ -39,6 +39,7 @@ vllm serve Qwen/Qwen2-VL-7B-Instruct \
   --gpu-memory-utilization 0.65 \
   --max-model-len 4096 \
   --served-model-name openai/Qwen/Qwen2-VL-7B-Instruct \
+  --served-model-name Qwen/Qwen2-VL-7B-Instruct \
   --trust-remote-code > /scratch/vllm_server.log 2>&1 &
 VLM_PID=$!
 
