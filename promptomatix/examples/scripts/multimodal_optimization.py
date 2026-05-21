@@ -44,7 +44,7 @@ def main():
     api_key        = os.environ.get("OPTIMIZER_API_KEY",   os.environ.get("OPENAI_API_KEY", ""))
     model_provider = os.environ.get("OPTIMIZER_PROVIDER",  "openai")
     n_iters        = int(os.environ.get("N_FEEDBACK_ITERATIONS", "2"))
-    synth_size     = int(os.environ.get("SYNTHETIC_DATA_SIZE",   "30"))
+    synth_size     = int(os.environ.get("SYNTHETIC_DATA_SIZE",   "10"))
     output_dir     = os.environ.get("OUTPUT_DIR", "/scratch/Mock_repo_mnlp/outputs")
 
     if not api_key:
@@ -81,6 +81,7 @@ def main():
         config_model_provider=model_provider,
         config_model_api_key=api_key,
         config_model_api_base=api_base,
+        config_max_tokens=32000,
         backend="simple_meta_prompt",
         synthetic_data_size=synth_size,
     )

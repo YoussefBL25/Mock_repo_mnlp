@@ -607,9 +607,8 @@ class PromptOptimizer:
             if hasattr(provider, 'value'):
                 provider = provider.value
             
-            if provider.lower() == 'openai':
-                oai_ouput = self._call_openai_api(prompt, model)
-                return oai_ouput
+            if provider.lower() in ('openai', 'local', 'databricks', 'togetherai'):
+                return self._call_openai_api(prompt, model)
             elif provider.lower() == 'anthropic':
                 return self._call_anthropic_api(prompt)
             elif provider.lower() == 'gemini':
