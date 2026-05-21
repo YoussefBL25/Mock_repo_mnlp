@@ -48,6 +48,11 @@ def load_pipeline():
         print(f"❌ Error loading diffusion pipeline: {str(e)}")
         sys.exit(1)
 
+@app.route("/health", methods=["GET"])
+def health():
+    load_pipeline()
+    return {"status": "ok", "model": os.environ.get("DIFFUSION_MODEL", "stabilityai/stable-diffusion-xl-base-1.0")}
+
 @app.route("/v1/images/generations", methods=["POST"])
 def generate_image():
     global pipe
@@ -87,4 +92,5 @@ def generate_image():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8001))
     print(f"🚀 Starting Local Diffusion Server on Port {port}...")
+    load_pipeline()  # load model before accepting requests to avoid first-request timeout
     app.run(host="0.0.0.0", port=port, debug=False)
