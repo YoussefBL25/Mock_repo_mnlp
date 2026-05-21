@@ -129,6 +129,16 @@ class PromptOptimizer:
         try:
             sample_data, sample_data_group = self._prepare_sample_data()
             template = {key: '...' for key in sample_data.keys()}
+            
+            # Ensure all input and output fields are included in the template
+            input_fields = self._parse_fields(self.config.input_fields)
+            output_fields = self._parse_fields(self.config.output_fields)
+            for field in input_fields:
+                if field not in template:
+                    template[field] = '...'
+            for field in output_fields:
+                if field not in template:
+                    template[field] = '...'
 
             # On average, 4 characters make up a token
             no_of_toks_in_sample_data = len(str(sample_data))/4

@@ -107,7 +107,7 @@ python3 -m promptomatix.main \
   --config_max_tokens 2048 \
   --config_temperature 0.7 \
   --backend "simple_meta_prompt" \
-  --sample_data '[{"concept": "Futuristic cyberpunk skyscraper inside a green rainforest dome, synthwave theme"}, {"concept": "A vintage Victorian library floating in outer space, warm cozy fireplace"}, {"concept": "Minimalist geometric sculpture on an empty white beach, soft morning light"}]'
+  --sample_data '[{"concept": "Futuristic cyberpunk skyscraper inside a green rainforest dome, synthwave theme", "output_prompt": "Futuristic synthwave cyberpunk skyscraper rising inside a massive bioluminescent green rainforest glass dome, dramatic lighting, highly detailed digital art"}, {"concept": "A vintage Victorian library floating in outer space, warm cozy fireplace", "output_prompt": "A warm cozy vintage Victorian library floating in outer space, stars visible through giant glass windows, glowing fireplace, oil painting style"}, {"concept": "Minimalist geometric sculpture on an empty white beach, soft morning light", "output_prompt": "A minimalist geometric sculpture standing on a vast empty white sand beach, illuminated by soft golden morning sunlight, photorealistic"}]'
 
 
 echo "========================================================="
