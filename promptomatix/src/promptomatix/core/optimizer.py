@@ -264,12 +264,24 @@ class PromptOptimizer:
         )
 
     def _clean_llm_response(self, response: str) -> str:
-        """Clean and format LLM response."""
-        if "```json" in response:
-            response = response.split("```json")[1].strip()
+        """Clean and format LLM response, extracting content from fenced blocks if present."""
+        response = response.strip()
         if "```" in response:
-            response = response.split("```")[0].strip()
-        return response.strip()
+            parts = response.split("```")
+            if len(parts) >= 2:
+                content = parts[1].strip()
+                # Strip any language specifiers from the first line
+                lines = content.split('\n')
+                if lines:
+                    first_line = lines[0].strip().lower()
+                    if first_line in ['json', 'xml', 'text', 'html', 'python', 'yaml', 'yml', 'bash', 'sh']:
+                        content = '\n'.join(lines[1:]).strip()
+                    elif any(first_line.startswith(lang) for lang in ['json', 'xml', 'text', 'html', 'python', 'yaml', 'yml']):
+                        if len(first_line) < 10:  # small length safeguard
+                            content = '\n'.join(lines[1:]).strip()
+                return content
+        return response
+
 
     def run(self, initial_flag: bool = True) -> Dict:
         """
