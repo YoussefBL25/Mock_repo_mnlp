@@ -611,6 +611,10 @@ def generate_feedback(
         if not input_fields or not output_fields:
             raise ValueError("Input fields and output fields are required")
         
+        # Strip provider prefix if present (e.g. "openai/") to match local vLLM served model name
+        if model_name.startswith("openai/"):
+            model_name = model_name[len("openai/"):]
+            
         # Initialize OpenAI client for feedback generation
         openai_client = OpenAI(api_key=model_api_key, base_url=model_api_base)
         

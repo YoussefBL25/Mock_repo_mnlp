@@ -693,6 +693,11 @@ class PromptOptimizer:
         """
         if model == "":
             model = self.config.config_model_name
+        
+        # Strip provider prefix if present (e.g. "openai/") to match local vLLM served model name
+        if model.startswith("openai/"):
+            model = model[len("openai/"):]
+            
         from openai import OpenAI
         
         # Configure OpenAI client
