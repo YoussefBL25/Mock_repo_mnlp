@@ -20,7 +20,7 @@ GROUP="g54"                  # <-- YOUR TEAM, e.g. g07.
 # ==============================================
 
 # Edit this for your project. Keep outputs/checkpoints under /scratch.
-TRAIN_COMMAND='git config --global --add safe.directory /scratch/Mock_repo_mnlp && if [ ! -d "/scratch/Mock_repo_mnlp" ]; then git clone https://github.com/YoussefBL25/Mock_repo_mnlp.git /scratch/Mock_repo_mnlp && cd /scratch/Mock_repo_mnlp && git checkout youssef_branch; else cd /scratch/Mock_repo_mnlp && git checkout youssef_branch && git fetch origin && git reset --hard origin/youssef_branch; fi && cd /scratch/Mock_repo_mnlp && pip install -e promptomatix --no-deps && pip install dspy rouge langdetect backoff ujson litellm && chmod +x scratch/run_with_servers.sh && ./scratch/run_with_servers.sh'
+TRAIN_COMMAND='git config --global --add safe.directory /scratch/Mock_repo_mnlp && if [ ! -d "/scratch/Mock_repo_mnlp" ]; then git clone https://github.com/YoussefBL25/Mock_repo_mnlp.git /scratch/Mock_repo_mnlp && cd /scratch/Mock_repo_mnlp && git checkout youssef_branch; else cd /scratch/Mock_repo_mnlp && git checkout youssef_branch && git fetch origin && git reset --hard origin/youssef_branch; fi && cd /scratch/Mock_repo_mnlp && pip install -e promptomatix --no-deps && pip install dspy rouge langdetect backoff ujson litellm flask diffusers accelerate && chmod +x scratch/run_with_servers.sh && ./scratch/run_with_servers.sh'
 
 if [[ "${GASPAR}" == "gaspar" || -z "${GASPAR}" ]]; then
     echo "ERROR: edit submit_train.sh and set GASPAR to your EPFL GASPAR username." >&2

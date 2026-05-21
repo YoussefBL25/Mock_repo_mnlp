@@ -13,6 +13,7 @@ echo "⏳ Launching local vLLM VLM Server (Qwen2-VL-7B-Instruct)..."
 vllm serve Qwen/Qwen2-VL-7B-Instruct \
   --port 8000 \
   --gpu-memory-utilization 0.55 \
+  --max-model-len 4096 \
   --trust-remote-code > /scratch/vllm_server.log 2>&1 &
 VLM_PID=$!
 
