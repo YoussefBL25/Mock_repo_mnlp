@@ -8,6 +8,29 @@ echo "========================================================="
 # Create necessary outputs directories
 mkdir -p /scratch/Mock_repo_mnlp/outputs/generated_images
 
+# Clean up any lingering processes on ports 8000 and 8001
+echo "🧹 Checking and cleaning up lingering processes on ports 8000 and 8001..."
+if command -v fuser >/dev/null 2>&1; then
+  fuser -k 8000/tcp || true
+  fuser -k 8001/tcp || true
+elif command -v lsof >/dev/null 2>&1; then
+  kill -9 $(lsof -t -i:8000) 2>/dev/null || true
+  kill -9 $(lsof -t -i:8001) 2>/dev/null || true
+else
+  python3 -c '
+import os
+import signal
+try:
+    import psutil
+    for conn in psutil.net_connections():
+        if conn.laddr.port in [8000, 8001] and conn.pid:
+            print(f"Killing process {conn.pid} on port {conn.laddr.port}")
+            os.kill(conn.pid, signal.SIGKILL)
+except Exception as e:
+    print(f"Python cleanup check bypassed: {e}")
+' || true
+fi
+
 # 1. Start vLLM Server in background
 echo "⏳ Launching local vLLM VLM Server (Qwen2-VL-7B-Instruct)..."
 vllm serve Qwen/Qwen2-VL-7B-Instruct \
@@ -15,6 +38,7 @@ vllm serve Qwen/Qwen2-VL-7B-Instruct \
   --port 8000 \
   --gpu-memory-utilization 0.65 \
   --max-model-len 4096 \
+  --served-model-name openai/Qwen/Qwen2-VL-7B-Instruct \
   --trust-remote-code > /scratch/vllm_server.log 2>&1 &
 VLM_PID=$!
 
