@@ -903,7 +903,14 @@ class PromptOptimizer:
     
     def get_final_eval_metrics(self):
         """Get final evaluation metrics for the task type."""
+        if isinstance(self.config.output_fields, str):
+            output_fields = ast.literal_eval(self.config.output_fields)
+        else:
+            output_fields = self.config.output_fields
+        
+        MetricsManager.configure(output_fields)
         return MetricsManager.get_final_eval_metrics(self.config.task_type)
+
 
     
     def _validate_synthetic_data(self, data: Dict, task: str) -> Tuple[bool, str]:

@@ -34,6 +34,10 @@ def parse_args() -> Dict:
     model_group.add_argument("--model_api_key", type=str, help="Model API key")
     model_group.add_argument("--model_api_base", type=str, help="Model API base")
     model_group.add_argument("--model_provider", type=str, help="Model provider")
+    model_group.add_argument("--config_model_name", type=str, help="Config model name")
+    model_group.add_argument("--config_model_api_key", type=str, help="Config model API key")
+    model_group.add_argument("--config_model_api_base", type=str, help="Config model API base")
+    model_group.add_argument("--config_model_provider", type=str, help="Config model provider")
     model_group.add_argument("--temperature", type=float, 
                            help="Model temperature (default: 0.7)")
     model_group.add_argument("--max_tokens", type=int, 

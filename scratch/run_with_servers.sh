@@ -64,7 +64,24 @@ echo "🎉 BOTH SERVERS ONLINE! EXECUTING OPTIMIZER PIPELINE"
 echo "========================================================="
 
 # 4. Run the actual optimizer!
-python3 promptomatix/examples/scripts/multimodal_optimization.py
+python3 -m promptomatix.main \
+  --raw_input "A photo of a {concept}." \
+  --task "A photo of a {concept}." \
+  --task_type "image_generation" \
+  --input_fields concept \
+  --output_fields output_prompt \
+  --model_name "Qwen/Qwen2-VL-7B-Instruct" \
+  --model_api_base "http://127.0.0.1:8000/v1" \
+  --model_api_key "mock" \
+  --model_provider "openai" \
+  --config_model_name "Qwen/Qwen2-VL-7B-Instruct" \
+  --config_model_api_base "http://127.0.0.1:8000/v1" \
+  --config_model_api_key "mock" \
+  --config_model_provider "openai" \
+  --synthetic_data_size 10 \
+  --backend "simple_meta_prompt" \
+  --sample_data '[{"concept": "Futuristic cyberpunk skyscraper inside a green rainforest dome, synthwave theme"}, {"concept": "A vintage Victorian library floating in outer space, warm cozy fireplace"}, {"concept": "Minimalist geometric sculpture on an empty white beach, soft morning light"}]'
+
 
 echo "========================================================="
 echo "🎉 PIPELINE COMPLETE!"
