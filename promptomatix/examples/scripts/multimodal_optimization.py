@@ -75,6 +75,12 @@ def main():
         model_name=model_name,
         model_api_key=api_key,
         model_provider=model_provider,
+        # Config has a separate "teacher" (config_model) used for data generation.
+        # Point it at the same local vLLM so it also skips the OPENAI_API_KEY lookup.
+        config_model_name=model_name,
+        config_model_provider=model_provider,
+        config_model_api_key=api_key,
+        config_model_api_base=api_base,
         backend="simple_meta_prompt",
         synthetic_data_size=synth_size,
     )

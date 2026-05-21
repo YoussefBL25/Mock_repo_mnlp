@@ -91,11 +91,12 @@ wait_for_url "http://localhost:8000/v1/models" "vLLM (port 8000)"             72
 export LOCAL_DIFFUSION_URL="http://localhost:8001/v1/images/generations"
 export LOCAL_VLM_URL="http://localhost:8000/v1/chat/completions"
 
-# Optimizer: same vLLM instance, text-only inputs, no API key required
+# Optimizer: same vLLM instance, text-only inputs, no API key required.
+# Use provider="local" so Config skips the OPENAI_API_KEY env var lookup.
 export OPTIMIZER_MODEL="openai/Qwen/Qwen2-VL-7B-Instruct"
 export OPTIMIZER_API_BASE="http://localhost:8000/v1"
 export OPTIMIZER_API_KEY="local"
-export OPTIMIZER_PROVIDER="openai"
+export OPTIMIZER_PROVIDER="local"
 
 echo ""
 echo "============================================================"
