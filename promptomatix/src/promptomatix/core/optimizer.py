@@ -503,14 +503,19 @@ class PromptOptimizer:
             
             total_score = 0.0
             valid_evaluations = 0
-            
+
+            # For image generation, the prompt under evaluation IS the diffusion
+            # prompt — we want it to reach the diffuser unchanged. Skipping the
+            # per-sample LM rewrite avoids the LM fusing the prompt with the
+            # synthetic-data variation and emitting a drifted candidate (e.g.
+            # rewriting "A vintage Victorian library floating in outer space"
+            # into "A library of virtual reality books floating in outer space"
+            # because that's the variation the synth generator produced).
+            is_image_gen = (self.config.task_type or "").lower() == "image_generation"
+
             for i, sample in enumerate(all_data):
                 try:
-                    # Create a test prompt by combining the prompt with the sample input
-                    test_input = self._create_test_input_from_sample(sample)
-                    full_test_prompt = f"{prompt}\n\n{test_input}"
-                    
-                    # Extract image keys if present
+                    # Extract image keys if present (consumed by the LM path only)
                     images = []
                     for key in ['image', 'images', 'image_url', 'image_path']:
                         if key in sample and sample[key]:
@@ -519,13 +524,18 @@ class PromptOptimizer:
                                 images.extend(val)
                             else:
                                 images.append(val)
-                    
-                    # Get prediction from LLM
-                    prediction_text = self._call_llm_api_directly(full_test_prompt, images=images if images else None)
-                    
-                    # Create prediction object with the same structure as expected
-                    prediction = self._create_prediction_object(prediction_text, sample)
-                    
+
+                    if is_image_gen:
+                        # Send the prompt straight through. Synthetic samples
+                        # still drive iteration count -> diffuser stochasticity
+                        # gives us per-call image variance for averaging.
+                        prediction = self._create_prediction_object(prompt, sample)
+                    else:
+                        test_input = self._create_test_input_from_sample(sample)
+                        full_test_prompt = f"{prompt}\n\n{test_input}"
+                        prediction_text = self._call_llm_api_directly(full_test_prompt, images=images if images else None)
+                        prediction = self._create_prediction_object(prediction_text, sample)
+
                     # Evaluate using the appropriate metric
                     score = eval_metric(sample, prediction, prompt)
                     total_score += score
