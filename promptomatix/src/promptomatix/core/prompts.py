@@ -3150,12 +3150,13 @@ Non‑compliance is a hard failure. Surrounding narrative and examples may be op
 
 def generate_meta_prompt_image_gen(initial_prompt: str) -> str:
     """
-    Image-generation-specific rewrite prompt. Free-format pass: lets the model
-    pick tag-style or prose, just keeps the length budget and subject-preservation
-    rules. Tested after the strict tag-format pass induced repetition loops on
-    Qwen2-VL-7B; this version trades format control for graceful failure.
+    Image-generation-specific rewrite prompt. Open-ended: no format examples,
+    no "tag or prose" binary that biased earlier runs into mechanical tag
+    output. Rules target the two observed failure modes — losing spatial
+    relationships (concept 2: library "floating in space" fragmented into
+    isolated elements) and padding with atmospheric filler (concept 3).
     """
-    return f"""You are a prompt engineer for Stable Diffusion XL. Rewrite the user's concept into a stronger SDXL prompt.
+    return f"""You are a prompt engineer for Stable Diffusion XL. Rewrite the user's concept into a stronger SDXL prompt — one that, fed directly to the diffuser, produces a more compelling image of the same concept.
 
 Input concept:
 <input_prompt>
@@ -3163,21 +3164,11 @@ Input concept:
 </input_prompt>
 
 Rules:
-1. Preserve the core subject and theme. Don't change the subject (no skyscraper → castle, no library → museum).
-2. Maximum 60 words. The score is multiplied by exp(-0.005 × word_count), so brevity pays — drop detail rather than exceed the limit.
+1. Preserve the core subject and any spatial or relational context it establishes. If the concept says "X floating in Y", "X inside Y", "X on Y", that relationship must stay explicit in the output — do not fragment it into a list of isolated elements ("library, asteroids, stars" loses what made "library floating in space" the concept).
+2. Maximum 60 words. The score is multiplied by exp(-0.005 × word_count), so each word should pull weight. Add concrete visual information the diffuser will actually use — lighting, materials, palette, composition, framing, lens, art style — not atmospheric vibes ("serene", "dreamlike", "whimsical", "vast openness") or restatements of what's already implied.
 3. Plain text only — no JSON, markdown, XML tags, preamble, quotes, or commentary.
 
-Format is your choice. Comma-separated tags, a single sentence, or a short paragraph all work — pick whatever produces the best image for this concept. SDXL responds well to either style.
-
-Example (tag-style)
-Input:  ancient lighthouse on cliffs at sunset
-Output: ancient lighthouse, rugged sea cliffs, golden hour sunset, dramatic stormy sky, weathered stone tower, lantern glow, cinematic composition, oil painting style
-
-Example (prose-style)
-Input:  a lone violinist in a snowstorm
-Output: lone violinist mid-performance in a heavy snowstorm, snowflakes catching on dark coat, soft streetlight glow, cinematic moody atmosphere, painterly style
-
-Output ONLY the rewritten prompt.
+Phrasing, format, and level of detail are yours to choose based on what fits this specific concept. Output ONLY the rewritten prompt.
 """
 
 
