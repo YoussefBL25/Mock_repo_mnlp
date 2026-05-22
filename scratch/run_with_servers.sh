@@ -9,19 +9,22 @@ echo "========================================================="
 mkdir -p /scratch/Mock_repo_mnlp/outputs/generated_images
 
 # ── env vars consumed by multimodal_optimization.py and metrics.py ──────────
-export OPTIMIZER_MODEL="openai/Qwen/Qwen2-VL-7B-Instruct"
-export OPTIMIZER_API_BASE="http://localhost:8000/v1"
+# Rewriter / synthetic-data calls go to port 8002 (Qwen2.5-14B-Instruct-AWQ).
+# Judge calls go to port 8000 (Qwen2-VL-7B-Instruct) — set via LOCAL_VLM_URL.
+export OPTIMIZER_MODEL="openai/Qwen/Qwen2.5-14B-Instruct-AWQ"
+export OPTIMIZER_API_BASE="http://localhost:8002/v1"
 export OPTIMIZER_API_KEY="local"
 export OPTIMIZER_PROVIDER="local"
 export LOCAL_VLM_URL="http://localhost:8000/v1/chat/completions"
 export LOCAL_DIFFUSION_URL="http://localhost:8001/v1/images/generations"
 
-# 1. Start vLLM Server in background
-echo "⏳ Launching local vLLM VLM Server (Qwen2-VL-7B-Instruct)..."
+# 1. Start vLLM Judge Server in background (Qwen2-VL-7B handles the VLM judge).
+# Allocation dropped from 0.55 to 0.40 to free VRAM for the rewriter on 8002.
+echo "⏳ Launching local vLLM VLM Server (Qwen2-VL-7B-Instruct) — judge..."
 vllm serve Qwen/Qwen2-VL-7B-Instruct \
   --host 127.0.0.1 \
   --port 8000 \
-  --gpu-memory-utilization 0.55 \
+  --gpu-memory-utilization 0.40 \
   --max-model-len 8192 \
   --trust-remote-code > /scratch/vllm_server.log 2>&1 &
 VLM_PID=$!
@@ -31,11 +34,25 @@ echo "⏳ Launching local Stable Diffusion Server (SDXL base 1.0)..."
 python3 scratch/local_diffusion_server.py > /scratch/diffusion_server.log 2>&1 &
 DIFF_PID=$!
 
+# 3. Start vLLM Rewriter Server in background (Qwen2.5-14B-Instruct-AWQ, 4-bit).
+# Text-only instruction-tuned model with stronger rule following than VL-7B —
+# previous runs showed VL-7B locked into repetition loops on tag-style output.
+# AWQ 4-bit fits in ~9 GB; 0.20 of 40 GB = 8 GB target with KV cache.
+echo "⏳ Launching local vLLM Rewriter Server (Qwen2.5-14B-Instruct-AWQ)..."
+vllm serve Qwen/Qwen2.5-14B-Instruct-AWQ \
+  --host 127.0.0.1 \
+  --port 8002 \
+  --gpu-memory-utilization 0.20 \
+  --max-model-len 4096 \
+  --quantization awq \
+  --trust-remote-code > /scratch/vllm_rewriter.log 2>&1 &
+REWRITER_PID=$!
+
 # Function to clean up background servers on exit
 cleanup() {
-  echo "🧹 Cleaning up background servers (PIDs: $VLM_PID, $DIFF_PID)..."
-  kill $VLM_PID $DIFF_PID 2>/dev/null || true
-  wait $VLM_PID $DIFF_PID 2>/dev/null || true
+  echo "🧹 Cleaning up background servers (PIDs: $VLM_PID, $DIFF_PID, $REWRITER_PID)..."
+  kill $VLM_PID $DIFF_PID $REWRITER_PID 2>/dev/null || true
+  wait $VLM_PID $DIFF_PID $REWRITER_PID 2>/dev/null || true
   echo "✅ Background servers terminated successfully!"
 }
 trap cleanup EXIT
@@ -61,14 +78,16 @@ def wait_for_port(port, name, timeout=300):
     return False
 
 # vLLM might take a minute or two to download/load weights
-if not wait_for_port(8000, "vLLM Server", timeout=420):
+if not wait_for_port(8000, "vLLM Judge Server", timeout=420):
     sys.exit(1)
 if not wait_for_port(8001, "Stable Diffusion Server", timeout=120):
+    sys.exit(1)
+if not wait_for_port(8002, "vLLM Rewriter Server", timeout=600):
     sys.exit(1)
 '
 
 echo "========================================================="
-echo "🎉 BOTH SERVERS ONLINE! EXECUTING OPTIMIZER PIPELINE"
+echo "🎉 ALL SERVERS ONLINE! EXECUTING OPTIMIZER PIPELINE"
 echo "========================================================="
 
 # 4. Run the optimizer once per concept — each concept is its own prompt being optimized.
@@ -107,18 +126,20 @@ print((s[:60] or "unlabeled"))
   # Build sample_data JSON safely (handles quotes/specials in the concept text)
   SAMPLE_JSON=$(python3 -c 'import json,sys; c=sys.argv[1]; print(json.dumps([{"concept": c, "output_prompt": c}]))' "$CONCEPT")
 
+  # Rewriter/synthetic-data routed to the 14B-AWQ on port 8002.
+  # The judge still hits Qwen2-VL-7B on port 8000 via LOCAL_VLM_URL in metrics.py.
   python3 -m promptomatix.main \
     --raw_input "$CONCEPT" \
     --task "$CONCEPT" \
     --task_type "image_generation" \
     --input_fields concept \
     --output_fields output_prompt \
-    --model_name "openai/Qwen/Qwen2-VL-7B-Instruct" \
-    --model_api_base "http://127.0.0.1:8000/v1" \
+    --model_name "openai/Qwen/Qwen2.5-14B-Instruct-AWQ" \
+    --model_api_base "http://127.0.0.1:8002/v1" \
     --model_api_key "mock" \
     --model_provider "openai" \
-    --config_model_name "openai/Qwen/Qwen2-VL-7B-Instruct" \
-    --config_model_api_base "http://127.0.0.1:8000/v1" \
+    --config_model_name "openai/Qwen/Qwen2.5-14B-Instruct-AWQ" \
+    --config_model_api_base "http://127.0.0.1:8002/v1" \
     --config_model_api_key "mock" \
     --config_model_provider "openai" \
     --synthetic_data_size 10 \
