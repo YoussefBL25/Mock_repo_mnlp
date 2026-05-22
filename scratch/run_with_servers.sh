@@ -9,9 +9,9 @@ echo "========================================================="
 mkdir -p /scratch/Mock_repo_mnlp/outputs/generated_images
 
 # ── env vars consumed by multimodal_optimization.py and metrics.py ──────────
-# Rewriter / synthetic-data calls go to port 8002 (Qwen2.5-14B-Instruct-AWQ).
+# Rewriter / synthetic-data calls go to port 8002 (Qwen2.5-7B-Instruct-AWQ).
 # Judge calls go to port 8000 (Qwen2-VL-7B-Instruct) — set via LOCAL_VLM_URL.
-export OPTIMIZER_MODEL="openai/Qwen/Qwen2.5-14B-Instruct-AWQ"
+export OPTIMIZER_MODEL="openai/Qwen/Qwen2.5-7B-Instruct-AWQ"
 export OPTIMIZER_API_BASE="http://localhost:8002/v1"
 export OPTIMIZER_API_KEY="local"
 export OPTIMIZER_PROVIDER="local"
@@ -36,18 +36,18 @@ echo "⏳ Launching local Stable Diffusion Server (SDXL base 1.0)..."
 python3 scratch/local_diffusion_server.py > /scratch/diffusion_server.log 2>&1 &
 DIFF_PID=$!
 
-# 3. Start vLLM Rewriter Server in background (Qwen2.5-14B-Instruct-AWQ, 4-bit).
-# Text-only instruction-tuned model with stronger rule following than VL-7B —
-# previous runs showed VL-7B locked into repetition loops on tag-style output.
-# Allocation: 0.25 × 40 GB = 10 GB target. AWQ weights ~7 GB, leaving ~2.5 GB
-# for KV cache + overhead. (0.20 = 8 GB failed: KV cache had no room.)
-# max-model-len dropped 4096 → 2048: meta-prompt + 120-token output never
-# exceeds ~700 tokens, so 2048 is generous and halves KV cache reservation.
-echo "⏳ Launching local vLLM Rewriter Server (Qwen2.5-14B-Instruct-AWQ)..."
-vllm serve Qwen/Qwen2.5-14B-Instruct-AWQ \
+# 3. Start vLLM Rewriter Server in background (Qwen2.5-7B-Instruct-AWQ, 4-bit).
+# Text-only instruction-tuned model — much better rule following than VL-7B
+# (which locked into tag-style repetition loops on the previous runs).
+# Originally tried 14B-AWQ, but its real footprint is ~13 GB (9.4 GB weights
+# observed in the log + KV cache + cudagraph overhead), which doesn't fit
+# alongside judge (20 GB) + SDXL (~10 GB) on a 40 GB card.
+# 7B-AWQ: ~5 GB weights → 0.20 × 40 = 8 GB target gives 3 GB headroom.
+echo "⏳ Launching local vLLM Rewriter Server (Qwen2.5-7B-Instruct-AWQ)..."
+vllm serve Qwen/Qwen2.5-7B-Instruct-AWQ \
   --host 127.0.0.1 \
   --port 8002 \
-  --gpu-memory-utilization 0.25 \
+  --gpu-memory-utilization 0.20 \
   --max-model-len 2048 \
   --quantization awq \
   --trust-remote-code > /scratch/vllm_rewriter.log 2>&1 &
@@ -131,7 +131,7 @@ print((s[:60] or "unlabeled"))
   # Build sample_data JSON safely (handles quotes/specials in the concept text)
   SAMPLE_JSON=$(python3 -c 'import json,sys; c=sys.argv[1]; print(json.dumps([{"concept": c, "output_prompt": c}]))' "$CONCEPT")
 
-  # Rewriter/synthetic-data routed to the 14B-AWQ on port 8002.
+  # Rewriter/synthetic-data routed to the 7B-AWQ on port 8002.
   # The judge still hits Qwen2-VL-7B on port 8000 via LOCAL_VLM_URL in metrics.py.
   python3 -m promptomatix.main \
     --raw_input "$CONCEPT" \
@@ -139,11 +139,11 @@ print((s[:60] or "unlabeled"))
     --task_type "image_generation" \
     --input_fields concept \
     --output_fields output_prompt \
-    --model_name "openai/Qwen/Qwen2.5-14B-Instruct-AWQ" \
+    --model_name "openai/Qwen/Qwen2.5-7B-Instruct-AWQ" \
     --model_api_base "http://127.0.0.1:8002/v1" \
     --model_api_key "mock" \
     --model_provider "openai" \
-    --config_model_name "openai/Qwen/Qwen2.5-14B-Instruct-AWQ" \
+    --config_model_name "openai/Qwen/Qwen2.5-7B-Instruct-AWQ" \
     --config_model_api_base "http://127.0.0.1:8002/v1" \
     --config_model_api_key "mock" \
     --config_model_provider "openai" \
