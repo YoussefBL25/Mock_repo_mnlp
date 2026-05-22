@@ -444,8 +444,12 @@ class PromptOptimizer:
             else:
                 meta_prompt = generate_meta_prompt_7(self.config.raw_input)
 
-            # Get optimized prompt from LLM using direct API calls
-            optimized_prompt_raw = self._call_llm_api_directly(meta_prompt)
+            # Get optimized prompt from LLM using direct API calls.
+            # Sampling temperature deliberately bumped above 0 so the rewriter
+            # can explore phrasing and detail. Evaluation, validation, and
+            # synthetic-data calls remain deterministic (temperature defaults
+            # to 0.0 in _call_openai_api when no override is passed).
+            optimized_prompt_raw = self._call_llm_api_directly(meta_prompt, temperature=0.9)
 
             # Strip XML wrapper tags that the meta-prompt LLM may produce
             import re as _re
@@ -620,15 +624,20 @@ class PromptOptimizer:
             # Fallback: return a simple object with the prediction text
             return {"output": prediction_text.strip()}
 
-    def _call_llm_api_directly(self, prompt: str, model: str = "", images: list = None) -> str:
+    def _call_llm_api_directly(self, prompt: str, model: str = "", images: list = None,
+                                temperature: float = None) -> str:
         """
         Call LLM API directly based on the configured provider.
-        
+
         Args:
             prompt (str): The prompt to send to the LLM
             model (str): Optional model name
             images (list): Optional list of image paths or URLs
-            
+            temperature (float): Optional sampling temperature. When None, each
+                provider falls back to its existing default (0.0 for OpenAI-style,
+                config_temperature for Anthropic, provider default for Gemini),
+                keeping evaluation/validation calls deterministic.
+
         Returns:
             str: The LLM response
         """
@@ -637,13 +646,13 @@ class PromptOptimizer:
             provider = getattr(self.config, 'config_model_provider', 'openai')
             if hasattr(provider, 'value'):
                 provider = provider.value
-            
+
             if provider.lower() in ('openai', 'local', 'databricks', 'togetherai'):
-                return self._call_openai_api(prompt, model)
+                return self._call_openai_api(prompt, model, temperature=temperature)
             elif provider.lower() == 'anthropic':
-                return self._call_anthropic_api(prompt)
+                return self._call_anthropic_api(prompt, temperature=temperature)
             elif provider.lower() == 'gemini':
-                return self._call_gemini_api(prompt, model, images)
+                return self._call_gemini_api(prompt, model, images, temperature=temperature)
             else:
                 raise ValueError(f"Unsupported provider for direct API calls: {provider}")
                 
@@ -651,7 +660,8 @@ class PromptOptimizer:
             self.logger.error(f"Error calling LLM API directly: {str(e)}")
             raise
 
-    def _call_gemini_api(self, prompt: str, model: str = "", images: list = None) -> str:
+    def _call_gemini_api(self, prompt: str, model: str = "", images: list = None,
+                          temperature: float = None) -> str:
         """
         Call Gemini API directly.
         
@@ -686,7 +696,10 @@ class PromptOptimizer:
             clean_model = model.replace('gemini/', '') if model.startswith('gemini/') else model
             
             llm = genai.GenerativeModel(model_name=clean_model)
-            response = llm.generate_content(contents=contents)
+            gen_kwargs = {}
+            if temperature is not None:
+                gen_kwargs["generation_config"] = genai.GenerationConfig(temperature=temperature)
+            response = llm.generate_content(contents=contents, **gen_kwargs)
             response_text = response.text
             
             # Calculate cost (approximate)
@@ -699,23 +712,28 @@ class PromptOptimizer:
             self.logger.error(f"Error calling Gemini API: {str(e)}")
             raise
 
-    def _call_openai_api(self, prompt: str, model: str = "") -> str:
+    def _call_openai_api(self, prompt: str, model: str = "", temperature: float = None) -> str:
         """
         Call OpenAI API directly.
-        
+
         Args:
             prompt (str): The prompt to send
-            
+            model (str): Optional model name
+            temperature (float): Optional sampling temperature. Defaults to 0.0
+                (deterministic) when not provided — appropriate for eval and
+                validation calls. Callers that want sampling (e.g. the rewriter)
+                pass an explicit value.
+
         Returns:
             str: The API response
         """
         if model == "":
             model = self.config.config_model_name
-        
+
         # Strip provider prefix if present (e.g. "openai/") to match local vLLM served model name
         if model.startswith("openai/"):
             model = model[len("openai/"):]
-            
+
         from openai import OpenAI
 
         for prefix in ("openai/", "local/", "azure/", "togetherai/", "databricks/"):
@@ -728,6 +746,7 @@ class PromptOptimizer:
             base_url=self.config.config_model_api_base if self.config.config_model_api_base else None
         )
 
+        effective_temperature = temperature if temperature is not None else 0.0
 
         try:
             response = client.chat.completions.create(
@@ -735,7 +754,7 @@ class PromptOptimizer:
                 messages=[
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.0
+                temperature=effective_temperature
             )
             
             # Extract response content
@@ -759,29 +778,33 @@ class PromptOptimizer:
             self.logger.error(f"Error calling OpenAI API: {str(e)}")
             raise
 
-    def _call_anthropic_api(self, prompt: str) -> str:
+    def _call_anthropic_api(self, prompt: str, temperature: float = None) -> str:
         """
         Call Anthropic API directly.
-        
+
         Args:
             prompt (str): The prompt to send
-            
+            temperature (float): Optional sampling temperature override.
+                Falls back to self.config.config_temperature when not provided.
+
         Returns:
             str: The API response
         """
         import anthropic
-        
+
         # Configure Anthropic client
         client = anthropic.Anthropic(
             api_key=self.config.config_model_api_key,
             base_url=self.config.config_model_api_base if self.config.config_model_api_base else None
         )
-        
+
+        effective_temperature = temperature if temperature is not None else self.config.config_temperature
+
         try:
             response = client.messages.create(
                 model=self.config.config_model_name,
                 max_tokens=self.config.config_max_tokens,
-                temperature=self.config.config_temperature,
+                temperature=effective_temperature,
                 messages=[
                     {"role": "user", "content": prompt}
                 ]
