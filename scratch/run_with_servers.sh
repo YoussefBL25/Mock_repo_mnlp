@@ -19,12 +19,14 @@ export LOCAL_VLM_URL="http://localhost:8000/v1/chat/completions"
 export LOCAL_DIFFUSION_URL="http://localhost:8001/v1/images/generations"
 
 # 1. Start vLLM Judge Server in background (Qwen2-VL-7B handles the VLM judge).
-# Allocation dropped from 0.55 to 0.40 to free VRAM for the rewriter on 8002.
+# Allocation set to 0.50 — the original 0.55 was generous; 0.40 starved the KV
+# cache and crashed init with "No available memory for the cache blocks".
+# 0.50 × 40 GB = 20 GB: ~15 GB weights + ~3-4 GB KV cache at max-model-len 8192.
 echo "⏳ Launching local vLLM VLM Server (Qwen2-VL-7B-Instruct) — judge..."
 vllm serve Qwen/Qwen2-VL-7B-Instruct \
   --host 127.0.0.1 \
   --port 8000 \
-  --gpu-memory-utilization 0.40 \
+  --gpu-memory-utilization 0.50 \
   --max-model-len 8192 \
   --trust-remote-code > /scratch/vllm_server.log 2>&1 &
 VLM_PID=$!
