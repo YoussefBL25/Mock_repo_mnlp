@@ -142,7 +142,7 @@ print((s[:60] or "unlabeled"))
     --config_model_api_base "http://127.0.0.1:8002/v1" \
     --config_model_api_key "mock" \
     --config_model_provider "openai" \
-    --synthetic_data_size 10 \
+    --synthetic_data_size 5 \
     --max_tokens 2048 \
     --config_max_tokens 2048 \
     --config_temperature 0.7 \
