@@ -18,18 +18,36 @@ export OPTIMIZER_PROVIDER="local"
 export LOCAL_VLM_URL="http://localhost:8000/v1/chat/completions"
 export LOCAL_DIFFUSION_URL="http://localhost:8001/v1/images/generations"
 
-# 1. Start vLLM Judge Server in background (Qwen2-VL-7B handles the VLM judge).
-# Allocation set to 0.50 — the original 0.55 was generous; 0.40 starved the KV
-# cache and crashed init with "No available memory for the cache blocks".
-# 0.50 × 40 GB = 20 GB: ~15 GB weights + ~3-4 GB KV cache at max-model-len 8192.
+# 1. Start vLLM Judge Server in background FIRST and wait for it.
+# Serialized launch avoids profile-time memory races between vLLM instances —
+# previously, parallel init meant the judge's KV-cache check saw the rewriter
+# mid-load and refused to allocate. max-model-len dropped 8192 → 4096 because
+# the judge call is one image (~258 tokens) + ~500-token rubric + ~500-token
+# response = ~1300 tokens. 4096 is already 3× generous; 8192 was pure overhead.
 echo "⏳ Launching local vLLM VLM Server (Qwen2-VL-7B-Instruct) — judge..."
 vllm serve Qwen/Qwen2-VL-7B-Instruct \
   --host 127.0.0.1 \
   --port 8000 \
   --gpu-memory-utilization 0.50 \
-  --max-model-len 8192 \
+  --max-model-len 4096 \
   --trust-remote-code > /scratch/vllm_server.log 2>&1 &
 VLM_PID=$!
+
+# Block until the judge finishes profiling before launching others.
+echo "⏳ Waiting for judge engine to finish profiling (port 8000)..."
+python3 -c '
+import socket, time, sys
+start = time.time()
+while time.time() - start < 420:
+    try:
+        with socket.create_connection(("127.0.0.1", 8000), timeout=2):
+            print("✅ Judge ready, launching rewriter + diffuser.", flush=True)
+            sys.exit(0)
+    except OSError:
+        time.sleep(5)
+print("❌ Judge failed to start within 420s.", flush=True)
+sys.exit(1)
+'
 
 # 2. Start Diffusion Server in background
 echo "⏳ Launching local Stable Diffusion Server (SDXL base 1.0)..."
@@ -39,9 +57,6 @@ DIFF_PID=$!
 # 3. Start vLLM Rewriter Server in background (Qwen2.5-7B-Instruct-AWQ, 4-bit).
 # Text-only instruction-tuned model — much better rule following than VL-7B
 # (which locked into tag-style repetition loops on the previous runs).
-# Originally tried 14B-AWQ, but its real footprint is ~13 GB (9.4 GB weights
-# observed in the log + KV cache + cudagraph overhead), which doesn't fit
-# alongside judge (20 GB) + SDXL (~10 GB) on a 40 GB card.
 # 7B-AWQ: ~5 GB weights → 0.20 × 40 = 8 GB target gives 3 GB headroom.
 echo "⏳ Launching local vLLM Rewriter Server (Qwen2.5-7B-Instruct-AWQ)..."
 vllm serve Qwen/Qwen2.5-7B-Instruct-AWQ \
