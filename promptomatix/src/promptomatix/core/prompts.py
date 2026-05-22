@@ -3169,7 +3169,9 @@ Make the prompt produce a better image. You have wide freedom in how you achieve
 - The output must be usable directly as a text-to-image prompt: plain text, no JSON, no XML tags, no markdown, no headings, no preamble, no commentary, no surrounding quotes.
 
 ## Suggestions (use any subset that helps; ignore the rest)
-You may, when it serves the concept, add or refine: subject specifics, environment / setting, lighting, mood, composition, point of view, depth, color palette, materials, medium or art style, or quality modifiers. Comma-separated tag style and natural descriptive language are both fine — pick whichever fits the concept. There is no fixed length: be as concise or detailed as the concept warrants. Keep it under ~120 words so the diffusion model can attend to all of it.
+You may, when it serves the concept, add or refine: subject specifics, environment / setting, lighting, mood, composition, point of view, depth, color palette, materials, medium or art style, or quality modifiers. Comma-separated tag style and natural descriptive language are both fine — pick whichever fits the concept.
+
+Target 30-60 words. The score is multiplied by exp(-0.005 · word_count), so every extra word costs you: a 30-word prompt keeps ~86% of the judge score, 60 words keeps ~74%, 120 words only ~55%. The diffuser also stops attending to detail past ~75 CLIP tokens. Lead with the most discriminative subject, setting, and style cues; cut filler phrases like "majestically", "bathed in", "creating a sense of", "rendered in a [adjective] style".
 
 Output ONLY the rewritten prompt text.
 """
