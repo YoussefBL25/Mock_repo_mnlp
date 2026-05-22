@@ -3150,10 +3150,10 @@ Non‑compliance is a hard failure. Surrounding narrative and examples may be op
 
 def generate_meta_prompt_image_gen(initial_prompt: str) -> str:
     """
-    Image-generation-specific rewrite prompt. Forces comma-separated tag-style
-    output (which SDXL was trained on), caps the tag count, and asks the model
-    to self-revise before emitting — small VL models otherwise loop on the same
-    handful of tags ("neon lights, holographic displays, ...") indefinitely.
+    Image-generation-specific rewrite prompt. Free-format pass: lets the model
+    pick tag-style or prose, just keeps the length budget and subject-preservation
+    rules. Tested after the strict tag-format pass induced repetition loops on
+    Qwen2-VL-7B; this version trades format control for graceful failure.
     """
     return f"""You are a prompt engineer for Stable Diffusion XL. Rewrite the user's concept into a stronger SDXL prompt.
 
@@ -3164,19 +3164,20 @@ Input concept:
 
 Rules:
 1. Preserve the core subject and theme. Don't change the subject (no skyscraper → castle, no library → museum).
-2. Output a comma-separated list of 8-12 tags (each 1-4 words). No prose sentences. No connectives like "with", "while", "creating", "bathed in", "rises majestically". No preamble, no quotes, no markdown, no XML tags.
-3. No duplicates and no synonyms. Treat near-synonyms as duplicates — "neon lights" and "neon glow" count as the same tag, pick one. "holographic displays" and "holographic projections" count as the same tag, pick one. Each tag must add something genuinely new.
-4. Self-revise before outputting. Mentally draft your tag list, then check:
-   • Do you have more than 12 tags? Drop the weakest until you have 8-12.
-   • Are any two tags synonyms or near-duplicates? Remove one of each pair.
-   • Does the total exceed 60 words? Shorten individual tags or drop weak ones.
-   Output ONLY the final, revised list. Do not show the draft or your reasoning.
+2. Maximum 60 words. The score is multiplied by exp(-0.005 × word_count), so brevity pays — drop detail rather than exceed the limit.
+3. Plain text only — no JSON, markdown, XML tags, preamble, quotes, or commentary.
 
-Example
+Format is your choice. Comma-separated tags, a single sentence, or a short paragraph all work — pick whatever produces the best image for this concept. SDXL responds well to either style.
+
+Example (tag-style)
 Input:  ancient lighthouse on cliffs at sunset
-Output: ancient lighthouse, rugged sea cliffs, golden hour sunset, dramatic stormy sky, crashing waves, weathered stone tower, lantern glow, cinematic composition, oil painting style, atmospheric, 8k detail
+Output: ancient lighthouse, rugged sea cliffs, golden hour sunset, dramatic stormy sky, weathered stone tower, lantern glow, cinematic composition, oil painting style
 
-Output ONLY the rewritten tag prompt.
+Example (prose-style)
+Input:  a lone violinist in a snowstorm
+Output: lone violinist mid-performance in a heavy snowstorm, snowflakes catching on dark coat, soft streetlight glow, cinematic moody atmosphere, painterly style
+
+Output ONLY the rewritten prompt.
 """
 
 
