@@ -3150,30 +3150,28 @@ Non‑compliance is a hard failure. Surrounding narrative and examples may be op
 
 def generate_meta_prompt_image_gen(initial_prompt: str) -> str:
     """
-    Image-generation-specific rewrite prompt. Encourages the rewriter to expand
-    a short concept into a stronger diffusion prompt while leaving it room to be
-    creative about how — no fixed axes, format, or word count.
+    Image-generation-specific rewrite prompt. Forces comma-separated tag-style
+    output (which SDXL was trained on) and caps at 60 words — the tag format
+    mechanically discourages verbosity, since smaller VL models can't reliably
+    follow word-count rules in prose mode.
     """
-    return f"""You are a creative prompt engineer for text-to-image diffusion models such as Stable Diffusion XL. Rewrite the user's concept below into a stronger image-generation prompt that will produce a more visually compelling result.
+    return f"""You are a prompt engineer for Stable Diffusion XL. Rewrite the user's concept into a stronger SDXL prompt.
 
-## Input concept
+Input concept:
 <input_prompt>
 {initial_prompt}
 </input_prompt>
 
-## Goal
-Make the prompt produce a better image. You have wide freedom in how you achieve this — the rewrite can be a small polish or a substantial expansion, in whatever phrasing serves the concept best.
+Rules:
+1. Preserve the core subject and theme. Don't change the subject (no skyscraper → castle, no library → museum).
+2. Output ONE comma-separated list of short tags (each 1-4 words). No prose sentences. No connectives like "with", "while", "creating", "bathed in", "rises majestically". No preamble, no quotes, no markdown, no XML tags.
+3. Maximum 60 words. Brevity over completeness — drop detail rather than exceed the limit.
 
-## Hard rules (only these)
-- Preserve the core subject and theme of the concept. Don't swap the subject for a different one (e.g. don't turn a cyberpunk skyscraper into a fantasy castle, or a library into a museum). Adjectives, atmosphere, level of detail, framing, lighting, medium, etc. are all yours to change.
-- The output must be usable directly as a text-to-image prompt: plain text, no JSON, no XML tags, no markdown, no headings, no preamble, no commentary, no surrounding quotes.
+Example
+Input:  ancient lighthouse on cliffs at sunset
+Output: ancient lighthouse, rugged sea cliffs, golden hour sunset, dramatic stormy sky, crashing waves, weathered stone tower, lantern glow, cinematic composition, oil painting style, atmospheric, 8k detail
 
-## Suggestions (use any subset that helps; ignore the rest)
-You may, when it serves the concept, add or refine: subject specifics, environment / setting, lighting, mood, composition, point of view, depth, color palette, materials, medium or art style, or quality modifiers. Comma-separated tag style and natural descriptive language are both fine — pick whichever fits the concept.
-
-Target 30-60 words. The score is multiplied by exp(-0.005 · word_count), so every extra word costs you: a 30-word prompt keeps ~86% of the judge score, 60 words keeps ~74%, 120 words only ~55%. The diffuser also stops attending to detail past ~75 CLIP tokens. Lead with the most discriminative subject, setting, and style cues; cut filler phrases like "majestically", "bathed in", "creating a sense of", "rendered in a [adjective] style".
-
-Output ONLY the rewritten prompt text.
+Output ONLY the rewritten tag prompt.
 """
 
 
