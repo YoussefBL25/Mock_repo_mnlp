@@ -3148,6 +3148,53 @@ Non‑compliance is a hard failure. Surrounding narrative and examples may be op
     return meta_prompt_template.format(input_prompt=initial_prompt)
 
 
+def generate_reflection_prompt_image_gen(concept: str, previous_prompt: str, feedback: list) -> str:
+    """
+    Reflection-step prompt: ask the rewriter to revise its first attempt using
+    the VLM judge's actual reasoning + scores from a probe evaluation. Used by
+    the optimizer after the first rewrite when task_type == "image_generation".
+
+    Args:
+        concept: the user's original concept text.
+        previous_prompt: the first-pass rewrite to revise.
+        feedback: list of dicts with keys raw_content, adherence_score,
+                  aesthetic_score, artifact_score (one per probe sample).
+    """
+    blocks = []
+    for i, fb in enumerate(feedback, 1):
+        blocks.append(
+            f"--- Probe {i} ---\n"
+            f"Adherence: {fb['adherence_score']:.2f} | Aesthetic: {fb['aesthetic_score']:.2f} | Artifact: {fb['artifact_score']:.2f}\n"
+            f"Judge's reasoning:\n{fb['raw_content']}"
+        )
+    feedback_text = "\n\n".join(blocks)
+
+    return f"""You wrote an SDXL prompt for this concept; the diffuser produced images and an image judge scored them. Revise the prompt based on the judge's specific concerns.
+
+Original concept:
+<concept>
+{concept}
+</concept>
+
+Your previous attempt:
+<previous_prompt>
+{previous_prompt}
+</previous_prompt>
+
+Judge feedback (probe runs):
+{feedback_text}
+
+Read the judge's reasoning carefully. Low adherence usually means a key element of the concept is missing or wrong in the image — the prompt didn't anchor it strongly enough, or it fragmented a relational concept like "X floating in Y" into isolated elements. Low aesthetic or artifact scores point at composition/lighting/defects the prompt could counter with concrete style or framing cues.
+
+Revise the prompt to address the judge's specific points. Same rules as the first attempt:
+1. Preserve the core subject and any spatial/relational context. Don't fragment "X floating in Y" into "X, items, Y-related stuff" — keep the relationship explicit.
+2. Maximum 60 words. Every word should add concrete visual information (lighting, materials, palette, composition, framing, style) — not atmospheric vibes ("serene", "dreamlike") or restatements.
+3. Plain text only — no JSON, markdown, XML tags, preamble, quotes, or commentary.
+
+Output ONLY the revised prompt.
+"""
+
+
 def generate_meta_prompt_image_gen(initial_prompt: str) -> str:
     """
     Image-generation-specific rewrite prompt. Open-ended: no format examples,

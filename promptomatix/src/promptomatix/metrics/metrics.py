@@ -51,6 +51,10 @@ bert_score_metric = bert_score_silent
 
 class MetricsManager:
     _output_fields = None  # Class-level storage for output fields
+    # Reflection-loop hook: holds the most recent image-judge response so the
+    # optimizer can read judge reasoning back out of an evaluation pass.
+    # Populated by _image_generation_metrics; consumed by the reflection step.
+    _last_image_judge_response = None
 
     @staticmethod
     def configure(output_fields: List[str]) -> None:
@@ -1652,15 +1656,23 @@ class MetricsManager:
                         clean_content = clean_content.split("```")[1].split("```")[0].strip()
                     
                     eval_data = json.loads(clean_content)
-                    
+
                     print(f"🤖 [VLM JUDGE FEEDBACK COMPLETED]")
                     print(f"   Raw Judge Content:\n{raw_content}")
                     print(f"   Breakdown: Adherence (50%): {eval_data.get('adherence_score', 0.0):.2f} | Aesthetics (30%): {eval_data.get('aesthetic_score', 0.0):.2f} | Artifacts (20%): {eval_data.get('artifact_score', 0.0):.2f}")
-                    
+
                     w_adherence = float(eval_data.get("adherence_score", 0.0)) * 0.50
                     w_aesthetic = float(eval_data.get("aesthetic_score", 0.0)) * 0.30
                     w_artifacts = float(eval_data.get("artifact_score", 0.0)) * 0.20
                     score = w_adherence + w_aesthetic + w_artifacts
+
+                    # Stash judge response for the optimizer's reflection step.
+                    MetricsManager._last_image_judge_response = {
+                        "raw_content": raw_content,
+                        "adherence_score": float(eval_data.get("adherence_score", 0.0)),
+                        "aesthetic_score": float(eval_data.get("aesthetic_score", 0.0)),
+                        "artifact_score": float(eval_data.get("artifact_score", 0.0)),
+                    }
                 else:
                     raise ConnectionError("VLM Judge returned non-200 status code.")
                     
