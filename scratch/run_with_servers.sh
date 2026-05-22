@@ -74,7 +74,7 @@ echo "========================================================="
 # 4. Run the optimizer once per concept — each concept is its own prompt being optimized.
 CONCEPTS=(
   "Futuristic cyberpunk skyscraper inside a green rainforest dome, synthwave theme"
-  "A vintage Victorian library floating in outer space, warm cozy fireplace"
+  "A vintage Victorian library floating in outer space"
   "Minimalist geometric sculpture on an empty white beach, soft morning light"
 )
 
@@ -83,9 +83,18 @@ for i in "${!CONCEPTS[@]}"; do
   IDX=$((i + 1))
   TOTAL=${#CONCEPTS[@]}
 
+  # Slugify the concept for use as a per-concept folder name under
+  # outputs/generated_images/. The metric reads CONCEPT_LABEL to route saves.
+  CONCEPT_LABEL=$(python3 -c '
+import re, sys
+s = re.sub(r"[^A-Za-z0-9]+", "_", sys.argv[1]).strip("_").lower()
+print((s[:60] or "unlabeled"))
+' "$CONCEPT")
+  export CONCEPT_LABEL
+
   echo ""
   echo "========================================================="
-  echo "🎯 Optimizing concept ${IDX}/${TOTAL}"
+  echo "🎯 Optimizing concept ${IDX}/${TOTAL}  [folder: ${CONCEPT_LABEL}]"
   echo "    ${CONCEPT}"
   echo "========================================================="
 

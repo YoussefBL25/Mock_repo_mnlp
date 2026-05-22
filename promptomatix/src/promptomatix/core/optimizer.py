@@ -22,10 +22,11 @@ from ..core.config import Config
 from ..core.session import OptimizationSession
 from ..metrics.metrics import MetricsManager
 from .prompts import (
-    generate_synthetic_data_prompt, 
+    generate_synthetic_data_prompt,
     generate_synthetic_data_validation_prompt,
     generate_meta_prompt,
     generate_meta_prompt_7,
+    generate_meta_prompt_image_gen,
     validate_synthetic_data,
     generate_meta_prompt_2
 )
@@ -426,31 +427,39 @@ class PromptOptimizer:
                 self.config.train_data = synthetic_data[:self.config.train_data_size]
                 self.config.valid_data = synthetic_data[self.config.train_data_size:]
             
-            # Evaluate initial prompt first
+            # Evaluate initial prompt first.
+            # Set OPT_PHASE so the image-generation metric routes saved images into
+            # outputs/generated_images/<CONCEPT_LABEL>/synthetic_data/ for this round.
             print("🔧 Evaluating initial prompt...")
+            os.environ["OPT_PHASE"] = "synthetic_data"
             initial_score = self._evaluate_prompt_meta_backend(self.config.task)
             print(f"  Initial score: {initial_score:.4f}")
-            
-            # Generate meta-prompt using the function from prompts.py
-            meta_prompt = generate_meta_prompt_7(self.config.raw_input)
-            # print("~"*100)
-            # print(meta_prompt)
-            # print("~"*100)
-            
+
+            # Generate meta-prompt. For image_generation tasks, use the image-gen
+            # specific rewriter that expands the concept into a rich diffusion prompt
+            # rather than the generic schema-preserving rewriter (which short-circuits
+            # on prompts < 280 chars and barely changes them).
+            if (self.config.task_type or "").lower() == "image_generation":
+                meta_prompt = generate_meta_prompt_image_gen(self.config.raw_input)
+            else:
+                meta_prompt = generate_meta_prompt_7(self.config.raw_input)
+
             # Get optimized prompt from LLM using direct API calls
             optimized_prompt_raw = self._call_llm_api_directly(meta_prompt)
-            
+
             # Strip XML wrapper tags that the meta-prompt LLM may produce
             import re as _re
             optimized_prompt = _re.sub(
                 r'</?optimized_prompt>', '', optimized_prompt_raw
             ).strip()
             print(f"  Cleaned optimized prompt: {optimized_prompt}")
-            
-            # Evaluate optimized prompt
+
+            # Evaluate optimized prompt — route saved images into final_optimized/
             print("📊 Evaluating optimized prompt...")
+            os.environ["OPT_PHASE"] = "final_optimized"
             optimized_score = self._evaluate_prompt_meta_backend(optimized_prompt)
             print(f"  Optimized score: {optimized_score:.4f}")
+            os.environ.pop("OPT_PHASE", None)
             
             # Prepare and return results
             result = self._prepare_results(

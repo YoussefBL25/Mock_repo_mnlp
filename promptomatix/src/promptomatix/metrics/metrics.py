@@ -1549,17 +1549,25 @@ class MetricsManager:
                 
                 if response.status_code == 200:
                     b64_data = response.json()["data"][0]["b64_json"]
-                    
-                    # Proactively decode and save generated image to disk for user inspection
+
+                    # Proactively decode and save generated image to disk for user inspection.
+                    # Layout: <base>/<concept_label>/<phase>/gen_<prompt-snippet>_<ts>.png
+                    # where concept_label/phase come from env vars set by the runner script
+                    # and the optimizer (synthetic_data vs final_optimized eval round).
                     try:
                         import time
                         clean_prompt = "".join([c if c.isalnum() else "_" for c in candidate_prompt[:30].strip()])
                         filename = f"gen_{clean_prompt}_{int(time.time())}.png"
-                        
-                        output_dir = os.environ.get("GENERATED_IMAGES_DIR", "/scratch/Mock_repo_mnlp/outputs/generated_images")
-                        if not os.path.exists(output_dir):
-                            os.makedirs(output_dir, exist_ok=True)
-                            
+
+                        base_dir = os.environ.get(
+                            "GENERATED_IMAGES_DIR",
+                            "/scratch/Mock_repo_mnlp/outputs/generated_images",
+                        )
+                        concept_label = os.environ.get("CONCEPT_LABEL", "unlabeled")
+                        phase = os.environ.get("OPT_PHASE", "misc")
+                        output_dir = os.path.join(base_dir, concept_label, phase)
+                        os.makedirs(output_dir, exist_ok=True)
+
                         filepath = os.path.join(output_dir, filename)
                         with open(filepath, "wb") as fh:
                             fh.write(base64.b64decode(b64_data))
@@ -1568,18 +1576,49 @@ class MetricsManager:
                         print(f"⚠️ [SYSTEM WARNING] Failed to save generated image to disk: {str(save_err)}")
                 else:
                     raise ConnectionError("Diffusion server returned non-200 status code.")
-                    
-                # 2. Contact local VLM Judge to evaluate prompt adherence and aesthetics
+
+                # 2. Contact local VLM Judge to evaluate prompt adherence and aesthetics.
+                # The judge prompt uses anchored rubrics + brief reasoning so Qwen2-VL
+                # doesn't collapse onto the same 0.7-0.9 band for every image.
+                judge_text = (
+                    "You are a strict visual evaluation judge for text-to-image generation.\n"
+                    "Compare the image against this target concept:\n\n"
+                    f"TARGET CONCEPT: {concept_text}\n\n"
+                    "Score the image on three independent criteria on a 0.0 to 1.0 scale.\n\n"
+                    "1) adherence_score — Does the image actually contain what the concept describes?\n"
+                    "   - 1.0: All main subjects, attributes, and setting are clearly present and correctly rendered.\n"
+                    "   - 0.7: Most main subjects present, but one key attribute or setting detail is missing or wrong.\n"
+                    "   - 0.4: Only part of the concept is visible; main subject recognizable but most of the rest is wrong.\n"
+                    "   - 0.1: The image only loosely relates to the concept.\n"
+                    "   - 0.0: The image has no relationship to the concept.\n\n"
+                    "2) aesthetic_score — Visual quality, independent of the concept.\n"
+                    "   - 1.0: Striking composition, strong lighting, clear focal point.\n"
+                    "   - 0.7: Generally pleasant; minor composition or color issues.\n"
+                    "   - 0.4: Flat or cluttered composition, weak lighting, muddy colors.\n"
+                    "   - 0.1: Visually unappealing.\n\n"
+                    "3) artifact_score — Absence of technical defects (higher = fewer defects).\n"
+                    "   - 1.0: No visible defects.\n"
+                    "   - 0.7: Minor artifacts (slight blur, small distortions in non-focal areas).\n"
+                    "   - 0.4: Noticeable defects: warped hands/faces, weird text, melted geometry.\n"
+                    "   - 0.1: Severe artifacts dominate the image.\n\n"
+                    "Be discriminating. Do NOT default to 0.7-0.9 for everything. If a concept detail is missing, adherence_score must drop. If you see warped anatomy, garbled text, or melted geometry, artifact_score must drop. Use any score in [0, 1], including values like 0.35 or 0.85.\n\n"
+                    "Respond in this exact format:\n\n"
+                    "reasoning: <2-4 short sentences naming concrete things you see in the image and what is missing or wrong relative to the concept>\n\n"
+                    "```json\n"
+                    "{\n"
+                    "  \"adherence_score\": <float>,\n"
+                    "  \"aesthetic_score\": <float>,\n"
+                    "  \"artifact_score\": <float>\n"
+                    "}\n"
+                    "```\n"
+                )
                 vlm_payload = {
                     "model": "Qwen/Qwen2-VL-7B-Instruct",
                     "messages": [
                         {
                             "role": "user",
                             "content": [
-                                {
-                                    "type": "text",
-                                    "text": f"You are an expert visual evaluation judge. Analyze the provided image against this prompt: '{concept_text}'. Rate these three criteria from 0.0 (poor) to 1.0 (excellent):\n1) adherence_score: How closely does the image content match the prompt's core semantic details?\n2) aesthetic_score: Rate the visual quality, details, contrast, composition, and aesthetics.\n3) artifact_score: Rate the absence of weird artifacts, bad anatomy, blur, or rendering defects (1.0 means no defects, 0.0 means completely distorted).\n\nYou MUST respond strictly in valid JSON format inside a ```json``` codeblock like this:\n```json\n{{\n  \"adherence_score\": <float between 0.0 and 1.0>,\n  \"aesthetic_score\": <float between 0.0 and 1.0>,\n  \"artifact_score\": <float between 0.0 and 1.0>\n}}\n```\nDo not write any introductory or concluding text. Output only the JSON block."
-                                },
+                                {"type": "text", "text": judge_text},
                                 {
                                     "type": "image_url",
                                     "image_url": {
@@ -1590,7 +1629,7 @@ class MetricsManager:
                         }
                     ],
                     "temperature": 0.1,
-                    "max_tokens": 150
+                    "max_tokens": 500
                 }
                 
                 vlm_resp = requests.post(vlm_url, json=vlm_payload, headers=headers, timeout=30)

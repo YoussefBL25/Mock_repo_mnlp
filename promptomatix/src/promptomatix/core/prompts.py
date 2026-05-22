@@ -3148,6 +3148,36 @@ Non‑compliance is a hard failure. Surrounding narrative and examples may be op
     return meta_prompt_template.format(input_prompt=initial_prompt)
 
 
+def generate_meta_prompt_image_gen(initial_prompt: str) -> str:
+    """
+    Image-generation-specific rewrite prompt. Expands a short concept into a richer
+    diffusion prompt rather than treating it as a generic instruction template.
+    """
+    return f"""You are an expert prompt engineer for text-to-image diffusion models such as Stable Diffusion XL. Rewrite the user's concept below into a richer, more visually specific image prompt that will produce higher-quality images.
+
+## Input concept
+<input_prompt>
+{initial_prompt}
+</input_prompt>
+
+## Rewrite requirements
+- Preserve the core subject and theme exactly. Do NOT change cyberpunk into fantasy, swap a library for a museum, etc.
+- Add concrete visual detail across these axes (add only what is plausible — do not invent objects that contradict the concept):
+  * Subject: precise description of the main subject(s) and salient props.
+  * Environment / setting: background, surroundings, time of day.
+  * Lighting: source, direction, mood (golden hour, neon, volumetric, soft diffuse, etc.).
+  * Composition: framing, point of view, depth.
+  * Color palette and atmosphere.
+  * Medium / style: photograph, oil painting, digital art, concept art, etc.
+  * Quality modifiers: highly detailed, sharp focus, 8K, intricate, dramatic lighting (use 2-4 modifiers max).
+- Keep total length under 70 words. Diffusion models lose attention past that.
+- Output a SINGLE comma-separated phrase. No full sentences, no JSON, no XML tags, no preamble, no commentary, no headings.
+- Do not include meta words like "prompt", "image of", or "a picture of".
+
+Now output ONLY the rewritten prompt text on a single line.
+"""
+
+
 # def generate_meta_prompt_7(initial_prompt):
 #     """
 #     Return a meta‑prompt that instructs an LLM-based optimizer to improve the given initial_prompt,
