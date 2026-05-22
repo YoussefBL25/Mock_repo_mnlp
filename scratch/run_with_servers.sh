@@ -58,12 +58,16 @@ DIFF_PID=$!
 # Text-only instruction-tuned model — much better rule following than VL-7B
 # (which locked into tag-style repetition loops on the previous runs).
 # 7B-AWQ: ~5 GB weights → 0.20 × 40 = 8 GB target gives 3 GB headroom.
+# max-model-len 4096: needs to accommodate DSPy/synthetic-data calls that
+# request max_tokens=2048 output. With 158 input tokens + 2048 output = 2206,
+# 2048 would 400 with "Context window exceeded". 4096 gives margin for
+# all calls (rewriter only needs ~700 tokens; synth data needs ~2200).
 echo "⏳ Launching local vLLM Rewriter Server (Qwen2.5-7B-Instruct-AWQ)..."
 vllm serve Qwen/Qwen2.5-7B-Instruct-AWQ \
   --host 127.0.0.1 \
   --port 8002 \
   --gpu-memory-utilization 0.20 \
-  --max-model-len 2048 \
+  --max-model-len 4096 \
   --quantization awq \
   --trust-remote-code > /scratch/vllm_rewriter.log 2>&1 &
 REWRITER_PID=$!
