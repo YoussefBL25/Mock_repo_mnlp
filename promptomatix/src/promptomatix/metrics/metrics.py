@@ -1597,9 +1597,9 @@ class MetricsManager:
                     "You are a strict visual evaluation judge for text-to-image generation.\n"
                     "Compare the image against this target concept:\n\n"
                     f"TARGET CONCEPT: {concept_text}\n\n"
-                    "IMPORTANT — relational concepts: when the concept describes a relational scene (\"X in Y\", \"X floating in Z\", \"X on W\", \"X inside Y\"), the relationship AND the setting are REQUIRED parts of the concept, not deviations. "
-                    "Example: \"a Victorian library floating in outer space\" means the cosmic/celestial background IS the target — penalize a grounded library that does not float; do NOT penalize the planets/stars/nebulae because those are required by the concept. "
-                    "Same for \"sculpture on a white beach\" (beach setting required), \"skyscraper inside a rainforest dome\" (dome + foliage required), etc. Only treat the setting as a deviation if the concept does not name it.\n\n"
+                    "IMPORTANT — relational concepts: when the concept describes a relational scene (patterns like \"<subject> in <setting>\", \"<subject> floating in <setting>\", \"<subject> on <setting>\", \"<subject> inside <enclosure>\"), the relationship AND the setting are REQUIRED parts of the concept, not deviations. "
+                    "Example pattern: \"a brass astronaut helmet drifting in a coral reef\" — penalize a helmet placed somewhere else, or a helmet at rest on the sea floor (it should drift); do NOT penalize the coral or marine life because those are the named setting. "
+                    "When the concept names ANY setting or environment, that setting is part of the target — only treat a background as a deviation if the concept does not name or imply it.\n\n"
                     "Score the image on three independent criteria on a 0.0 to 1.0 scale.\n\n"
                     "1) adherence_score — Does the image actually contain what the concept describes?\n"
                     "   - 1.0: All main subjects, attributes, and setting are clearly present and correctly rendered.\n"
@@ -1628,6 +1628,12 @@ class MetricsManager:
                     "}\n"
                     "```\n"
                 )
+                # Multi-judge averaging: call the VLM judge K times at non-zero
+                # temperature and aggregate via median, which is robust to a
+                # single incoherent ruling (e.g. "outer space is not part of the
+                # concept" when the concept is literally "library in space").
+                K_JUDGE_SAMPLES = 3
+                JUDGE_TEMPERATURE = 0.5  # was 0.1; needs variance for averaging to help
                 vlm_payload = {
                     "model": "Qwen/Qwen2-VL-7B-Instruct",
                     "messages": [
@@ -1644,40 +1650,65 @@ class MetricsManager:
                             ]
                         }
                     ],
-                    "temperature": 0.1,
-                    "max_tokens": 500
+                    "temperature": JUDGE_TEMPERATURE,
+                    "max_tokens": 500,
                 }
-                
-                vlm_resp = requests.post(vlm_url, json=vlm_payload, headers=headers, timeout=30)
-                if vlm_resp.status_code == 200:
-                    raw_content = vlm_resp.json()["choices"][0]["message"]["content"].strip()
-                    # Clean up common markdown block issues
-                    clean_content = raw_content.strip()
-                    if "```json" in clean_content:
-                        clean_content = clean_content.split("```json")[1].split("```")[0].strip()
-                    elif "```" in clean_content:
-                        clean_content = clean_content.split("```")[1].split("```")[0].strip()
-                    
-                    eval_data = json.loads(clean_content)
 
-                    print(f"🤖 [VLM JUDGE FEEDBACK COMPLETED]")
-                    print(f"   Raw Judge Content:\n{raw_content}")
-                    print(f"   Breakdown: Adherence (50%): {eval_data.get('adherence_score', 0.0):.2f} | Aesthetics (30%): {eval_data.get('aesthetic_score', 0.0):.2f} | Artifacts (20%): {eval_data.get('artifact_score', 0.0):.2f}")
+                adherence_samples = []
+                aesthetic_samples = []
+                artifact_samples = []
+                raw_contents = []
+                for k in range(K_JUDGE_SAMPLES):
+                    try:
+                        vlm_resp = requests.post(vlm_url, json=vlm_payload, headers=headers, timeout=30)
+                        if vlm_resp.status_code != 200:
+                            print(f"   ⚠ Judge call {k+1}/{K_JUDGE_SAMPLES} returned HTTP {vlm_resp.status_code}, skipping")
+                            continue
+                        raw_content = vlm_resp.json()["choices"][0]["message"]["content"].strip()
+                        clean_content = raw_content.strip()
+                        if "```json" in clean_content:
+                            clean_content = clean_content.split("```json")[1].split("```")[0].strip()
+                        elif "```" in clean_content:
+                            clean_content = clean_content.split("```")[1].split("```")[0].strip()
+                        eval_data = json.loads(clean_content)
+                        adherence_samples.append(float(eval_data.get("adherence_score", 0.0)))
+                        aesthetic_samples.append(float(eval_data.get("aesthetic_score", 0.0)))
+                        artifact_samples.append(float(eval_data.get("artifact_score", 0.0)))
+                        raw_contents.append(raw_content)
+                    except (json.JSONDecodeError, KeyError, ValueError) as parse_err:
+                        print(f"   ⚠ Judge call {k+1}/{K_JUDGE_SAMPLES} parse failed: {parse_err}, skipping")
+                        continue
 
-                    w_adherence = float(eval_data.get("adherence_score", 0.0)) * 0.50
-                    w_aesthetic = float(eval_data.get("aesthetic_score", 0.0)) * 0.30
-                    w_artifacts = float(eval_data.get("artifact_score", 0.0)) * 0.20
-                    score = w_adherence + w_aesthetic + w_artifacts
+                if not adherence_samples:
+                    raise ConnectionError("All K judge calls failed (HTTP errors or parse failures).")
 
-                    # Stash judge response for the optimizer's reflection step.
-                    MetricsManager._last_image_judge_response = {
-                        "raw_content": raw_content,
-                        "adherence_score": float(eval_data.get("adherence_score", 0.0)),
-                        "aesthetic_score": float(eval_data.get("aesthetic_score", 0.0)),
-                        "artifact_score": float(eval_data.get("artifact_score", 0.0)),
-                    }
-                else:
-                    raise ConnectionError("VLM Judge returned non-200 status code.")
+                import statistics as _stats
+                adherence = _stats.median(adherence_samples)
+                aesthetic = _stats.median(aesthetic_samples)
+                artifact = _stats.median(artifact_samples)
+
+                print(f"🤖 [VLM JUDGE FEEDBACK COMPLETED — median of {len(adherence_samples)}/{K_JUDGE_SAMPLES}]")
+                print(f"   First reasoning:\n{raw_contents[0]}")
+                fmt = lambda xs: "[" + ", ".join(f"{x:.2f}" for x in xs) + "]"
+                print(f"   Adherence  samples: {fmt(adherence_samples)} → median {adherence:.2f}")
+                print(f"   Aesthetic  samples: {fmt(aesthetic_samples)} → median {aesthetic:.2f}")
+                print(f"   Artifact   samples: {fmt(artifact_samples)} → median {artifact:.2f}")
+                print(f"   Weighted: Adherence (50%): {adherence:.2f} | Aesthetics (30%): {aesthetic:.2f} | Artifacts (20%): {artifact:.2f}")
+
+                w_adherence = adherence * 0.50
+                w_aesthetic = aesthetic * 0.30
+                w_artifacts = artifact * 0.20
+                score = w_adherence + w_aesthetic + w_artifacts
+
+                # Stash judge response for the optimizer's reflection step.
+                # Use the first reasoning text (any one is fine to ground the
+                # rewriter; the medianed scores are what matter for the metric).
+                MetricsManager._last_image_judge_response = {
+                    "raw_content": raw_contents[0],
+                    "adherence_score": adherence,
+                    "aesthetic_score": aesthetic,
+                    "artifact_score": artifact,
+                }
                     
             except Exception as conn_err:
                 # 3. ROBUST DEVELOPER FALLBACK: If APIs are not online, calculate simulated/mock score
