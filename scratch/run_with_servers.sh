@@ -92,6 +92,12 @@ print((s[:60] or "unlabeled"))
 ' "$CONCEPT")
   export CONCEPT_LABEL
 
+  # Pin the judge target to the user's original concept text. Without this
+  # the VLM judge evaluates each image against the drifted synthetic
+  # variation (which the synth generator often pads with extra attributes
+  # not in the user's concept) and penalizes faithful images.
+  export TARGET_CONCEPT="$CONCEPT"
+
   echo ""
   echo "========================================================="
   echo "🎯 Optimizing concept ${IDX}/${TOTAL}  [folder: ${CONCEPT_LABEL}]"

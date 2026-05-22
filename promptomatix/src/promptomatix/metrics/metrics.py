@@ -1515,14 +1515,23 @@ class MetricsManager:
             import base64
             import requests
             
-            # Extract target concept description
-            concept_text = ""
-            if isinstance(example, dict):
-                concept_text = example.get("concept", example.get("core_subject", example.get("text", "")))
-            elif hasattr(example, 'concept') or hasattr(example, 'core_subject') or hasattr(example, 'text'):
-                concept_text = getattr(example, "concept", getattr(example, "core_subject", getattr(example, "text", "")))
+            # Extract target concept description.
+            # When the runner exports TARGET_CONCEPT (per-concept optimization
+            # mode), use it as the ground-truth target instead of the synthetic
+            # sample's concept field. Otherwise the judge evaluates against the
+            # drifted variation the synthetic generator produced (which often
+            # hallucinates extra attributes like "a distant ship on the
+            # horizon" or "a lone figure walking"), and penalizes the image
+            # for not containing those — even though they were never in the
+            # user's original concept.
+            concept_text = os.environ.get("TARGET_CONCEPT", "").strip()
             if not concept_text:
-                concept_text = MetricsManager._get_output_value(example)
+                if isinstance(example, dict):
+                    concept_text = example.get("concept", example.get("core_subject", example.get("text", "")))
+                elif hasattr(example, 'concept') or hasattr(example, 'core_subject') or hasattr(example, 'text'):
+                    concept_text = getattr(example, "concept", getattr(example, "core_subject", getattr(example, "text", "")))
+                if not concept_text:
+                    concept_text = MetricsManager._get_output_value(example)
                 
             # Extract candidate prompt (prediction)
             candidate_prompt = MetricsManager._get_output_value(pred)

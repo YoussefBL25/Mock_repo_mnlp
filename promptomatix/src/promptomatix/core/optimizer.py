@@ -449,7 +449,7 @@ class PromptOptimizer:
             # can explore phrasing and detail. Evaluation, validation, and
             # synthetic-data calls remain deterministic (temperature defaults
             # to 0.0 in _call_openai_api when no override is passed).
-            optimized_prompt_raw = self._call_llm_api_directly(meta_prompt, temperature=0.9)
+            optimized_prompt_raw = self._call_llm_api_directly(meta_prompt, temperature=0.7)
 
             # Strip XML wrapper tags that the meta-prompt LLM may produce
             import re as _re
