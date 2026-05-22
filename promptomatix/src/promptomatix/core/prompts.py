@@ -3150,31 +3150,28 @@ Non‑compliance is a hard failure. Surrounding narrative and examples may be op
 
 def generate_meta_prompt_image_gen(initial_prompt: str) -> str:
     """
-    Image-generation-specific rewrite prompt. Expands a short concept into a richer
-    diffusion prompt rather than treating it as a generic instruction template.
+    Image-generation-specific rewrite prompt. Encourages the rewriter to expand
+    a short concept into a stronger diffusion prompt while leaving it room to be
+    creative about how — no fixed axes, format, or word count.
     """
-    return f"""You are an expert prompt engineer for text-to-image diffusion models such as Stable Diffusion XL. Rewrite the user's concept below into a richer, more visually specific image prompt that will produce higher-quality images.
+    return f"""You are a creative prompt engineer for text-to-image diffusion models such as Stable Diffusion XL. Rewrite the user's concept below into a stronger image-generation prompt that will produce a more visually compelling result.
 
 ## Input concept
 <input_prompt>
 {initial_prompt}
 </input_prompt>
 
-## Rewrite requirements
-- Preserve the core subject and theme exactly. Do NOT change cyberpunk into fantasy, swap a library for a museum, etc.
-- Add concrete visual detail across these axes (add only what is plausible — do not invent objects that contradict the concept):
-  * Subject: precise description of the main subject(s) and salient props.
-  * Environment / setting: background, surroundings, time of day.
-  * Lighting: source, direction, mood (golden hour, neon, volumetric, soft diffuse, etc.).
-  * Composition: framing, point of view, depth.
-  * Color palette and atmosphere.
-  * Medium / style: photograph, oil painting, digital art, concept art, etc.
-  * Quality modifiers: highly detailed, sharp focus, 8K, intricate, dramatic lighting (use 2-4 modifiers max).
-- Keep total length under 70 words. Diffusion models lose attention past that.
-- Output a SINGLE comma-separated phrase. No full sentences, no JSON, no XML tags, no preamble, no commentary, no headings.
-- Do not include meta words like "prompt", "image of", or "a picture of".
+## Goal
+Make the prompt produce a better image. You have wide freedom in how you achieve this — the rewrite can be a small polish or a substantial expansion, in whatever phrasing serves the concept best.
 
-Now output ONLY the rewritten prompt text on a single line.
+## Hard rules (only these)
+- Preserve the core subject and theme of the concept. Don't swap the subject for a different one (e.g. don't turn a cyberpunk skyscraper into a fantasy castle, or a library into a museum). Adjectives, atmosphere, level of detail, framing, lighting, medium, etc. are all yours to change.
+- The output must be usable directly as a text-to-image prompt: plain text, no JSON, no XML tags, no markdown, no headings, no preamble, no commentary, no surrounding quotes.
+
+## Suggestions (use any subset that helps; ignore the rest)
+You may, when it serves the concept, add or refine: subject specifics, environment / setting, lighting, mood, composition, point of view, depth, color palette, materials, medium or art style, or quality modifiers. Comma-separated tag style and natural descriptive language are both fine — pick whichever fits the concept. There is no fixed length: be as concise or detailed as the concept warrants. Keep it under ~120 words so the diffusion model can attend to all of it.
+
+Output ONLY the rewritten prompt text.
 """
 
 
