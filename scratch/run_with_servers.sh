@@ -71,29 +71,50 @@ echo "========================================================="
 echo "🎉 BOTH SERVERS ONLINE! EXECUTING OPTIMIZER PIPELINE"
 echo "========================================================="
 
-# 4. Run the actual optimizer!
-python3 -m promptomatix.main \
-  --raw_input "A photo of a {concept}." \
-  --task "A photo of a {concept}." \
-  --task_type "image_generation" \
-  --input_fields concept \
-  --output_fields output_prompt \
-  --model_name "openai/Qwen/Qwen2-VL-7B-Instruct" \
-  --model_api_base "http://127.0.0.1:8000/v1" \
-  --model_api_key "mock" \
-  --model_provider "openai" \
-  --config_model_name "openai/Qwen/Qwen2-VL-7B-Instruct" \
-  --config_model_api_base "http://127.0.0.1:8000/v1" \
-  --config_model_api_key "mock" \
-  --config_model_provider "openai" \
-  --synthetic_data_size 10 \
-  --max_tokens 2048 \
-  --config_max_tokens 2048 \
-  --config_temperature 0.7 \
-  --backend "simple_meta_prompt" \
-  --sample_data '[{"concept": "Futuristic cyberpunk skyscraper inside a green rainforest dome, synthwave theme", "output_prompt": "Futuristic synthwave cyberpunk skyscraper rising inside a massive bioluminescent green rainforest glass dome, dramatic lighting, highly detailed digital art"}, {"concept": "A vintage Victorian library floating in outer space, warm cozy fireplace", "output_prompt": "A warm cozy vintage Victorian library floating in outer space, stars visible through giant glass windows, glowing fireplace, oil painting style"}, {"concept": "Minimalist geometric sculpture on an empty white beach, soft morning light", "output_prompt": "A minimalist geometric sculpture standing on a vast empty white sand beach, illuminated by soft golden morning sunlight, photorealistic"}]'
+# 4. Run the optimizer once per concept — each concept is its own prompt being optimized.
+CONCEPTS=(
+  "Futuristic cyberpunk skyscraper inside a green rainforest dome, synthwave theme"
+  "A vintage Victorian library floating in outer space, warm cozy fireplace"
+  "Minimalist geometric sculpture on an empty white beach, soft morning light"
+)
+
+for i in "${!CONCEPTS[@]}"; do
+  CONCEPT="${CONCEPTS[$i]}"
+  IDX=$((i + 1))
+  TOTAL=${#CONCEPTS[@]}
+
+  echo ""
+  echo "========================================================="
+  echo "🎯 Optimizing concept ${IDX}/${TOTAL}"
+  echo "    ${CONCEPT}"
+  echo "========================================================="
+
+  # Build sample_data JSON safely (handles quotes/specials in the concept text)
+  SAMPLE_JSON=$(python3 -c 'import json,sys; c=sys.argv[1]; print(json.dumps([{"concept": c, "output_prompt": c}]))' "$CONCEPT")
+
+  python3 -m promptomatix.main \
+    --raw_input "$CONCEPT" \
+    --task "$CONCEPT" \
+    --task_type "image_generation" \
+    --input_fields concept \
+    --output_fields output_prompt \
+    --model_name "openai/Qwen/Qwen2-VL-7B-Instruct" \
+    --model_api_base "http://127.0.0.1:8000/v1" \
+    --model_api_key "mock" \
+    --model_provider "openai" \
+    --config_model_name "openai/Qwen/Qwen2-VL-7B-Instruct" \
+    --config_model_api_base "http://127.0.0.1:8000/v1" \
+    --config_model_api_key "mock" \
+    --config_model_provider "openai" \
+    --synthetic_data_size 3 \
+    --max_tokens 2048 \
+    --config_max_tokens 2048 \
+    --config_temperature 0.7 \
+    --backend "simple_meta_prompt" \
+    --sample_data "$SAMPLE_JSON"
+done
 
 
 echo "========================================================="
-echo "🎉 PIPELINE COMPLETE!"
+echo "🎉 PIPELINE COMPLETE! (${#CONCEPTS[@]} concepts optimized)"
 echo "========================================================="
