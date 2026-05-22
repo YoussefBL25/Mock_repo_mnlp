@@ -39,13 +39,16 @@ DIFF_PID=$!
 # 3. Start vLLM Rewriter Server in background (Qwen2.5-14B-Instruct-AWQ, 4-bit).
 # Text-only instruction-tuned model with stronger rule following than VL-7B —
 # previous runs showed VL-7B locked into repetition loops on tag-style output.
-# AWQ 4-bit fits in ~9 GB; 0.20 of 40 GB = 8 GB target with KV cache.
+# Allocation: 0.25 × 40 GB = 10 GB target. AWQ weights ~7 GB, leaving ~2.5 GB
+# for KV cache + overhead. (0.20 = 8 GB failed: KV cache had no room.)
+# max-model-len dropped 4096 → 2048: meta-prompt + 120-token output never
+# exceeds ~700 tokens, so 2048 is generous and halves KV cache reservation.
 echo "⏳ Launching local vLLM Rewriter Server (Qwen2.5-14B-Instruct-AWQ)..."
 vllm serve Qwen/Qwen2.5-14B-Instruct-AWQ \
   --host 127.0.0.1 \
   --port 8002 \
-  --gpu-memory-utilization 0.20 \
-  --max-model-len 4096 \
+  --gpu-memory-utilization 0.25 \
+  --max-model-len 2048 \
   --quantization awq \
   --trust-remote-code > /scratch/vllm_rewriter.log 2>&1 &
 REWRITER_PID=$!
