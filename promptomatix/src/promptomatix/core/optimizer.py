@@ -449,7 +449,12 @@ class PromptOptimizer:
             # can explore phrasing and detail. Evaluation, validation, and
             # synthetic-data calls remain deterministic (temperature defaults
             # to 0.0 in _call_openai_api when no override is passed).
-            optimized_prompt_raw = self._call_llm_api_directly(meta_prompt, temperature=0.7)
+            # max_tokens=120 hard-caps the rewriter against runaway tag-style
+            # repetition on smaller models. 120 tokens ≈ 80-90 words, leaving
+            # margin around the 60-word meta-prompt target.
+            optimized_prompt_raw = self._call_llm_api_directly(
+                meta_prompt, temperature=0.7, max_tokens=120
+            )
 
             # Strip XML wrapper tags that the meta-prompt LLM may produce
             import re as _re
@@ -635,7 +640,7 @@ class PromptOptimizer:
             return {"output": prediction_text.strip()}
 
     def _call_llm_api_directly(self, prompt: str, model: str = "", images: list = None,
-                                temperature: float = None) -> str:
+                                temperature: float = None, max_tokens: int = None) -> str:
         """
         Call LLM API directly based on the configured provider.
 
@@ -647,6 +652,9 @@ class PromptOptimizer:
                 provider falls back to its existing default (0.0 for OpenAI-style,
                 config_temperature for Anthropic, provider default for Gemini),
                 keeping evaluation/validation calls deterministic.
+            max_tokens (int): Optional hard cap on generated tokens. When None,
+                the provider's default applies. Used by the image-gen rewriter
+                to prevent tag-style runaway repetition on smaller models.
 
         Returns:
             str: The LLM response
@@ -658,7 +666,7 @@ class PromptOptimizer:
                 provider = provider.value
 
             if provider.lower() in ('openai', 'local', 'databricks', 'togetherai'):
-                return self._call_openai_api(prompt, model, temperature=temperature)
+                return self._call_openai_api(prompt, model, temperature=temperature, max_tokens=max_tokens)
             elif provider.lower() == 'anthropic':
                 return self._call_anthropic_api(prompt, temperature=temperature)
             elif provider.lower() == 'gemini':
@@ -722,7 +730,8 @@ class PromptOptimizer:
             self.logger.error(f"Error calling Gemini API: {str(e)}")
             raise
 
-    def _call_openai_api(self, prompt: str, model: str = "", temperature: float = None) -> str:
+    def _call_openai_api(self, prompt: str, model: str = "", temperature: float = None,
+                          max_tokens: int = None) -> str:
         """
         Call OpenAI API directly.
 
@@ -733,6 +742,8 @@ class PromptOptimizer:
                 (deterministic) when not provided — appropriate for eval and
                 validation calls. Callers that want sampling (e.g. the rewriter)
                 pass an explicit value.
+            max_tokens (int): Optional hard cap on generated tokens. When None,
+                the server's default applies.
 
         Returns:
             str: The API response
@@ -759,13 +770,14 @@ class PromptOptimizer:
         effective_temperature = temperature if temperature is not None else 0.0
 
         try:
-            response = client.chat.completions.create(
-                model=model,
-                messages=[
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=effective_temperature
-            )
+            create_kwargs = {
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": effective_temperature,
+            }
+            if max_tokens is not None:
+                create_kwargs["max_tokens"] = max_tokens
+            response = client.chat.completions.create(**create_kwargs)
             
             # Extract response content
             response_text = response.choices[0].message.content
