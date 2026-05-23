@@ -32,17 +32,29 @@ def load_pipeline():
     try:
         # Load in half precision (float16) to conserve VRAM for vLLM
         pipe = DiffusionPipeline.from_pretrained(
-            model_id, 
-            torch_dtype=torch.float16, 
+            model_id,
+            torch_dtype=torch.float16,
             use_safetensors=True
         )
         pipe.to("cuda")
-        
+
+        # Force every weight-bearing submodule to fp16 explicitly.
+        # `torch_dtype=torch.float16` at from_pretrained sometimes leaves
+        # auxiliary components (watermarker, parts of the VAE) in fp32,
+        # which causes intermittent "Input type (Half) and bias type (Float)
+        # should be the same" errors — the first call may succeed, then
+        # global autocast state shifts (vLLM on the same GPU is a common
+        # trigger) and subsequent calls hit the dtype mismatch.
+        for attr in ("unet", "vae", "text_encoder", "text_encoder_2"):
+            mod = getattr(pipe, attr, None)
+            if mod is not None and hasattr(mod, "to"):
+                mod.to(dtype=torch.float16)
+
         # VRAM optimization configurations
         pipe.enable_attention_slicing()
         # if hasattr(pipe, "enable_model_cpu_offload"):
         #     pipe.enable_model_cpu_offload()
-            
+
         print(f"✅ Diffusion Pipeline ({model_id}) Loaded Successfully on GPU!")
     except Exception as e:
         print(f"❌ Error loading diffusion pipeline: {str(e)}")
@@ -67,8 +79,10 @@ def generate_image():
     print(f"🖼️ Generating image for prompt: '{prompt}'")
     
     try:
-        # Run inference in FP16 with minimal steps for speed
-        with torch.inference_mode():
+        # Run inference in FP16 with minimal steps for speed.
+        # autocast belt-and-suspenders against the float16/float32 mismatch
+        # that fires intermittently when vLLM modifies global dtype state.
+        with torch.inference_mode(), torch.autocast(device_type="cuda", dtype=torch.float16):
             image = pipe(prompt=prompt, num_inference_steps=20).images[0]
             
         # Encode output image directly to base64 string
