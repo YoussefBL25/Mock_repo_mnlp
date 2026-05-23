@@ -445,49 +445,77 @@ class PromptOptimizer:
             else:
                 meta_prompt = generate_meta_prompt_7(self.config.raw_input)
 
-            # Get optimized prompt from LLM using direct API calls.
-            # Sampling temperature deliberately bumped above 0 so the rewriter
-            # can explore phrasing and detail. Evaluation, validation, and
-            # synthetic-data calls remain deterministic (temperature defaults
-            # to 0.0 in _call_openai_api when no override is passed).
             # max_tokens=120 hard-caps the rewriter against runaway tag-style
             # repetition on smaller models. 120 tokens ≈ 80-90 words, leaving
             # margin around the 60-word meta-prompt target.
-            optimized_prompt_raw = self._call_llm_api_directly(
-                meta_prompt, temperature=0.7, max_tokens=120
-            )
-
-            # Strip XML wrapper tags that the meta-prompt LLM may produce
+            # Temperature 0.7 lets sampling explore phrasing/detail. Eval and
+            # synth-data calls remain deterministic (temp defaults to 0.0).
             import re as _re
-            optimized_prompt = _re.sub(
-                r'</?optimized_prompt>', '', optimized_prompt_raw
-            ).strip()
-            print(f"  First-pass optimized prompt: {optimized_prompt}")
 
-            # Reflection step (image_generation only): probe the first rewrite
-            # on K=2 synthetic samples, capture VLM judge reasoning, and ask
-            # the rewriter to revise against the judge's specific concerns.
-            # Cheaper than best-of-N and uses real diffuser+judge signal.
             if (self.config.task_type or "").lower() == "image_generation":
-                PROBE_SAMPLES = 2
-                print(f"🔍 Reflection: probing first rewrite on {PROBE_SAMPLES} sample(s)...")
-                os.environ["OPT_PHASE"] = "probe"
-                probe_feedback = []
-                probe_data = (self.config.train_data + (self.config.valid_data or []))[:PROBE_SAMPLES]
-                eval_metric = self.get_final_eval_metrics()
-                for sample in probe_data:
-                    try:
-                        prediction = self._create_prediction_object(optimized_prompt, sample)
-                        _ = eval_metric(sample, prediction, optimized_prompt)
-                        judge_resp = MetricsManager._last_image_judge_response
-                        if judge_resp:
-                            probe_feedback.append(dict(judge_resp))
-                    except Exception as probe_err:
-                        print(f"  ⚠ Probe sample failed: {probe_err}")
+                # Best-of-N: generate K first-pass rewrites, probe each on
+                # one sample, pick the highest-scoring as the winner, then
+                # run a reflection pass on the winner using its probe feedback.
+                # K_REWRITES=3 triples LLM rewriter cost (cheap, ~2-5s each)
+                # and adds ~K-2 extra diffuser+judge calls vs the prior 2-probe
+                # reflection-only flow.
+                K_REWRITES = 3
+                PROBE_SAMPLES_PER_REWRITE = 1
 
+                print(f"🎲 Best-of-{K_REWRITES}: generating candidate rewrites...")
+                candidates = []
+                for i in range(K_REWRITES):
+                    raw = self._call_llm_api_directly(
+                        meta_prompt, temperature=0.7, max_tokens=120
+                    )
+                    cleaned = _re.sub(r'</?optimized_prompt>', '', raw).strip()
+                    if cleaned:
+                        candidates.append(cleaned)
+                        print(f"  Candidate {i+1}: {cleaned}")
+                    else:
+                        print(f"  ⚠ Candidate {i+1} returned empty, skipping")
+
+                if not candidates:
+                    raise RuntimeError("All best-of-N rewrites returned empty.")
+
+                print(f"🔍 Probing {len(candidates)} candidate(s) on {PROBE_SAMPLES_PER_REWRITE} sample each...")
+                os.environ["OPT_PHASE"] = "probe"
+                eval_metric = self.get_final_eval_metrics()
+                probe_data = (self.config.train_data + (self.config.valid_data or []))[:PROBE_SAMPLES_PER_REWRITE]
+
+                scored = []
+                for i, candidate in enumerate(candidates):
+                    scores = []
+                    feedback = []
+                    for sample in probe_data:
+                        try:
+                            prediction = self._create_prediction_object(candidate, sample)
+                            s = eval_metric(sample, prediction, candidate)
+                            scores.append(s)
+                            resp = MetricsManager._last_image_judge_response
+                            if resp:
+                                feedback.append(dict(resp))
+                        except Exception as probe_err:
+                            print(f"  ⚠ Candidate {i+1} probe failed: {probe_err}")
+                    if scores:
+                        avg = sum(scores) / len(scores)
+                        scored.append({"candidate": candidate, "score": avg, "feedback": feedback})
+                        print(f"  Candidate {i+1} probe score: {avg:.4f}")
+
+                if not scored:
+                    optimized_prompt = candidates[0]
+                    probe_feedback = []
+                    print(f"  ⚠ All candidate probes failed; using first candidate without reflection.")
+                else:
+                    scored.sort(key=lambda x: x["score"], reverse=True)
+                    winner = scored[0]
+                    optimized_prompt = winner["candidate"]
+                    probe_feedback = winner["feedback"]
+                    print(f"  🏆 Winner (probe score {winner['score']:.4f}): {optimized_prompt}")
+
+                # Reflection on winner using its probe feedback
                 if probe_feedback:
-                    avg_adherence = sum(f["adherence_score"] for f in probe_feedback) / len(probe_feedback)
-                    print(f"  ✓ Captured {len(probe_feedback)} probe feedback entries (mean adherence: {avg_adherence:.2f}). Generating revision...")
+                    print(f"💭 Reflecting on winner...")
                     reflection_prompt = generate_reflection_prompt_image_gen(
                         self.config.raw_input, optimized_prompt, probe_feedback
                     )
@@ -501,9 +529,18 @@ class PromptOptimizer:
                         optimized_prompt = revised_prompt
                         print(f"  Revised optimized prompt: {optimized_prompt}")
                     else:
-                        print("  ⚠ Revision returned empty; keeping first-pass prompt.")
+                        print("  ⚠ Revision returned empty; keeping winner.")
                 else:
                     print("  ⚠ No probe feedback captured; skipping reflection.")
+            else:
+                # Non-image-gen path: single rewrite, no probe/reflection.
+                optimized_prompt_raw = self._call_llm_api_directly(
+                    meta_prompt, temperature=0.7, max_tokens=120
+                )
+                optimized_prompt = _re.sub(
+                    r'</?optimized_prompt>', '', optimized_prompt_raw
+                ).strip()
+                print(f"  Optimized prompt: {optimized_prompt}")
 
             # Evaluate optimized prompt — route saved images into final_optimized/
             print("📊 Evaluating optimized prompt...")
