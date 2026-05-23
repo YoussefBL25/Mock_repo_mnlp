@@ -7,6 +7,13 @@ Designed to share single-GPU VRAM with vLLM safely.
 """
 
 import os
+
+# Reduce CUDA allocator fragmentation when sharing the GPU with vLLM —
+# vLLM's allocations can leave the free pool fragmented, causing SDXL's
+# 512 MB VAE allocation to fail even when total free memory is sufficient.
+# Must be set BEFORE torch initializes CUDA, so it lives above the torch import.
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
 import sys
 import torch
 import base64
@@ -52,6 +59,15 @@ def load_pipeline():
 
         # VRAM optimization configurations
         pipe.enable_attention_slicing()
+        # VAE tiling + slicing: the VAE decode step is the peak-memory moment
+        # of SDXL inference (1024×1024 latent → image needs ~800 MB transient).
+        # Tiling processes the latent in chunks, dropping peak to <100 MB.
+        # Required when sharing the GPU with vLLM judge + rewriter on a 40 GB
+        # card — without this we OOM at the final decode step.
+        if hasattr(pipe, "enable_vae_tiling"):
+            pipe.enable_vae_tiling()
+        if hasattr(pipe, "enable_vae_slicing"):
+            pipe.enable_vae_slicing()
         # if hasattr(pipe, "enable_model_cpu_offload"):
         #     pipe.enable_model_cpu_offload()
 
