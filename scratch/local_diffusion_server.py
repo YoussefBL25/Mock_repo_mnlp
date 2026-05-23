@@ -45,17 +45,13 @@ def load_pipeline():
         )
         pipe.to("cuda")
 
-        # Force every weight-bearing submodule to fp16 explicitly.
-        # `torch_dtype=torch.float16` at from_pretrained sometimes leaves
-        # auxiliary components (watermarker, parts of the VAE) in fp32,
-        # which causes intermittent "Input type (Half) and bias type (Float)
-        # should be the same" errors — the first call may succeed, then
-        # global autocast state shifts (vLLM on the same GPU is a common
-        # trigger) and subsequent calls hit the dtype mismatch.
-        for attr in ("unet", "vae", "text_encoder", "text_encoder_2"):
-            mod = getattr(pipe, attr, None)
-            if mod is not None and hasattr(mod, "to"):
-                mod.to(dtype=torch.float16)
+        # NB: do NOT force-cast the VAE (or any submodule) to fp16 here.
+        # SDXL's VAE has known numerical instability in pure fp16 and
+        # `from_pretrained(torch_dtype=torch.float16)` already keeps certain
+        # internal ops at higher precision. A hard cast collapses VAE output
+        # quality (images come out partially decoded / washed-out / NaN).
+        # The autocast wrapper around inference (below) catches the original
+        # dtype-mismatch issue without modifying weights.
 
         # VRAM optimization configurations
         pipe.enable_attention_slicing()
