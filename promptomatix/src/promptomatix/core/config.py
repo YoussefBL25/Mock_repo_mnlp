@@ -2,12 +2,13 @@ import os
 import ast
 import json
 import logging
+import re
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Optional, List, Any, Dict, Type
-
 import dspy
+import requests
 from datasets import load_dataset, Dataset
 
 from ..utils.paths import CONFIG_LOGS_DIR
@@ -291,6 +292,22 @@ class Config:
         self.task_type = kwargs.get('task_type')
         self.tools = kwargs.get('tools')
         self.decouple_task_description_and_raw_input = kwargs.get('decouple_task_description_and_raw_input', False)
+        self.image_pool = kwargs.get('image_pool') or []
+        self.image_pool_target_size = kwargs.get('image_pool_target_size', 50)
+        self.image_pool_sources = kwargs.get('image_pool_sources', ['google_cse'])
+        self.auto_fetch_image_pool = kwargs.get('auto_fetch_image_pool', True)
+        self.google_custom_search_api_key = (
+            kwargs.get('google_custom_search_api_key')
+            or os.getenv('GOOGLE_CUSTOM_SEARCH_API_KEY')
+            or os.getenv('GOOGLE_API_KEY')
+        )
+        self.google_custom_search_cx = (
+            kwargs.get('google_custom_search_cx')
+            or kwargs.get('google_search_engine_id')
+            or os.getenv('GOOGLE_CUSTOM_SEARCH_CX')
+            or os.getenv('GOOGLE_SEARCH_ENGINE_ID')
+            or os.getenv('GOOGLE_CSE_ID')
+        )
 
         # Model configuration
         self.model_name = kwargs.get('model_name')
@@ -409,6 +426,10 @@ class Config:
         self.dspy_module = self._set_dspy_module(tmp_lm)
         logger.info(f"Selected DSPy module: {self.dspy_module.__name__}")
 
+        self._resolve_image_pool()
+        if self.image_pool:
+            logger.info(f"Image pool prepared with {len(self.image_pool)} items")
+
         # Set data configuration with defaults if needed
         self.synthetic_data_size = self.synthetic_data_size or DEFAULT_SYNTHETIC_DATA_SIZE
         logger.info(f"Synthetic data size: {self.synthetic_data_size}")
@@ -493,6 +514,9 @@ class Config:
 
         # Load user-provided data if available
         self._load_user_provided_data()
+        self._resolve_image_pool()
+        if self.image_pool:
+            logger.info(f"Image pool prepared with {len(self.image_pool)} items")
 
         # Set data configuration with defaults if needed (only if data not provided)
         if not self.train_data and not self.valid_data:
@@ -523,6 +547,282 @@ class Config:
             return response.lower().split('task description')[1].strip()
         else:
             return response
+
+    def _resolve_image_pool(self) -> None:
+        """Prepare the image pool for multimodal/VQA tasks.
+
+        If the user provided an image_pool, keep it and only normalize/deduplicate it.
+        If image_pool is empty and the task is VQA, seed it from existing examples and
+        then auto-populate additional public image URLs based on task keywords.
+        """
+        self.image_pool = self._normalize_image_pool(self.image_pool)
+
+        if str(self.task_type).lower() != 'vqa':
+            return
+
+        if self.image_pool:
+            return
+
+        seed_images = self._collect_image_references()
+        if seed_images:
+            self.image_pool.extend(seed_images)
+
+        if not self.auto_fetch_image_pool:
+            self.image_pool = self._deduplicate_list(self.image_pool)
+            return
+
+        remaining = max(0, int(self.image_pool_target_size) - len(self.image_pool))
+        if remaining <= 0:
+            self.image_pool = self._deduplicate_list(self.image_pool)
+            return
+
+        query = self._build_image_pool_query()
+        if not query:
+            self.image_pool = self._deduplicate_list(self.image_pool)
+            return
+
+        fetched_images = self._fetch_public_image_candidates(query=query, limit=remaining)
+        self.image_pool.extend(fetched_images)
+        self.image_pool = self._deduplicate_list(self.image_pool)
+
+    def _normalize_image_pool(self, image_pool: Any) -> List[str]:
+        """Normalize image_pool into a flat list of image references."""
+        if image_pool is None:
+            return []
+
+        if isinstance(image_pool, (str, Path)):
+            return [str(image_pool)]
+
+        normalized = []
+        if isinstance(image_pool, list):
+            for item in image_pool:
+                if isinstance(item, dict):
+                    for key in ['image', 'image_url', 'image_path', 'url', 'path']:
+                        value = item.get(key)
+                        if value:
+                            normalized.append(str(value))
+                            break
+                elif item:
+                    normalized.append(str(item))
+
+        return self._deduplicate_list(normalized)
+
+    def _collect_image_references(self) -> List[str]:
+        """Collect image references from sample, train, and validation data."""
+        image_refs = []
+        for source in [self.sample_data, self.train_data, self.valid_data, self.valid_data_full]:
+            image_refs.extend(self._extract_image_refs_from_source(source))
+        return self._deduplicate_list(image_refs)
+
+    def _extract_image_refs_from_source(self, source: Any) -> List[str]:
+        """Extract image references from one data source."""
+        refs = []
+        if source is None:
+            return refs
+
+        items = source
+        if isinstance(source, str):
+            try:
+                items = json.loads(source)
+            except Exception:
+                try:
+                    items = ast.literal_eval(source)
+                except Exception:
+                    return refs
+
+        if isinstance(items, dict):
+            items = [items]
+        if not isinstance(items, list):
+            return refs
+
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            for key in ['image', 'image_url', 'image_path']:
+                value = item.get(key)
+                if isinstance(value, list):
+                    refs.extend(str(v) for v in value if v)
+                elif value:
+                    refs.append(str(value))
+        return refs
+
+    def _build_image_pool_query(self) -> str:
+        """Build a lightweight keyword query from the task and sample questions."""
+        text_parts = [
+            self.task_description,
+            self.raw_input,
+            getattr(self, 'task', None),
+            getattr(self, 'question', None),
+            self.context,
+        ]
+
+        sample_questions = []
+        for source in [self.sample_data, self.train_data]:
+            sample_questions.extend(self._extract_text_fields_from_source(source, ['question', 'prompt', 'query']))
+
+        text_parts.extend(sample_questions[:5])
+        combined_text = " ".join(part for part in text_parts if part)
+        tokens = self._extract_keywords(combined_text)
+        return " ".join(tokens[:6])
+
+    def _extract_text_fields_from_source(self, source: Any, field_names: List[str]) -> List[str]:
+        """Extract text fields such as question/prompt from a dataset-like source."""
+        values = []
+        if source is None:
+            return values
+
+        items = source
+        if isinstance(source, str):
+            try:
+                items = json.loads(source)
+            except Exception:
+                try:
+                    items = ast.literal_eval(source)
+                except Exception:
+                    return values
+
+        if isinstance(items, dict):
+            items = [items]
+        if not isinstance(items, list):
+            return values
+
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            for field_name in field_names:
+                value = item.get(field_name)
+                if isinstance(value, str) and value.strip():
+                    values.append(value.strip())
+        return values
+
+    def _extract_keywords(self, text: str) -> List[str]:
+        """Extract a small set of useful task keywords for public image retrieval."""
+        stopwords = {
+            'a', 'an', 'and', 'answer', 'answers', 'are', 'bird', 'by', 'for', 'from',
+            'given', 'identify', 'image', 'images', 'in', 'is', 'kind', 'of', 'on',
+            'picture', 'question', 'the', 'this', 'to', 'visual', 'what', 'with'
+        }
+        tokens = re.findall(r"[A-Za-z0-9][A-Za-z0-9_-]{1,}", text.lower())
+        keywords = [token for token in tokens if token not in stopwords]
+        return self._deduplicate_list(keywords)
+
+    def _fetch_public_image_candidates(self, query: str, limit: int) -> List[str]:
+        """Fetch public image URLs from configured providers and validate them."""
+        candidates = []
+
+        for source_name in self.image_pool_sources:
+            if len(candidates) >= limit:
+                break
+
+            if source_name == 'google_cse':
+                candidates.extend(
+                    self._fetch_google_cse_image_candidates(
+                        query=query,
+                        limit=limit - len(candidates),
+                    )
+                )
+
+        return self._resolve_existing_image_urls(candidates, limit=limit)
+
+    def _fetch_google_cse_image_candidates(self, query: str, limit: int) -> List[str]:
+        """Fetch image result URLs from Google's Custom Search JSON API."""
+        if limit <= 0:
+            return []
+
+        if not self.google_custom_search_api_key or not self.google_custom_search_cx:
+            logger.warning(
+                "Google image retrieval requested but GOOGLE_CUSTOM_SEARCH_API_KEY/GOOGLE_API_KEY "
+                "or GOOGLE_CUSTOM_SEARCH_CX/GOOGLE_CSE_ID is not configured."
+            )
+            return []
+
+        endpoint = "https://www.googleapis.com/customsearch/v1"
+        start = 1
+        collected = []
+
+        while len(collected) < limit and start <= 91:
+            num = min(10, limit - len(collected))
+            params = {
+                "key": self.google_custom_search_api_key,
+                "cx": self.google_custom_search_cx,
+                "q": query,
+                "searchType": "image",
+                "num": num,
+                "start": start,
+                "safe": "active",
+                "imgType": "photo",
+            }
+
+            try:
+                response = requests.get(endpoint, params=params, timeout=15)
+                response.raise_for_status()
+                payload = response.json()
+            except Exception as exc:
+                logger.warning(f"Google Custom Search image retrieval failed: {exc}")
+                break
+
+            items = payload.get("items", []) or []
+            if not items:
+                break
+
+            for item in items:
+                link = item.get("link")
+                mime = (item.get("mime") or "").lower()
+                if link and (not mime or mime.startswith("image/")):
+                    collected.append(link)
+                    if len(collected) >= limit:
+                        break
+
+            next_page = payload.get("queries", {}).get("nextPage", [])
+            if not next_page:
+                break
+            start = next_page[0].get("startIndex", start + num)
+
+        return self._deduplicate_list(collected)[:limit]
+
+    def _resolve_existing_image_urls(self, candidates: List[str], limit: int) -> List[str]:
+        """Keep only candidate URLs that resolve to readable image resources."""
+        resolved = []
+        headers = {"User-Agent": "promptomatix/0.1"}
+
+        for candidate in self._deduplicate_list(candidates):
+            if len(resolved) >= limit:
+                break
+
+            response = None
+            try:
+                response = requests.get(
+                    candidate,
+                    allow_redirects=True,
+                    stream=True,
+                    timeout=10,
+                    headers=headers,
+                )
+                response.raise_for_status()
+
+                content_type = response.headers.get("Content-Type", "").lower()
+                final_url = response.url or candidate
+                if content_type.startswith("image/") and final_url not in resolved:
+                    resolved.append(final_url)
+            except Exception:
+                continue
+            finally:
+                try:
+                    response.close()
+                except Exception:
+                    pass
+
+        return resolved
+
+    def _deduplicate_list(self, values: List[str]) -> List[str]:
+        """Deduplicate a list while preserving order."""
+        seen = set()
+        deduped = []
+        for value in values:
+            if value and value not in seen:
+                seen.add(value)
+                deduped.append(value)
+        return deduped
 
     def _improvise_raw_input(self, tmp_lm):
         """Improvise the human input."""
@@ -1756,5 +2056,3 @@ class Config:
                 
                 self.valid_data = test_df.to_dict('records') 
                 logger.info(f"Loaded {len(self.valid_data)} validation samples")
-
-

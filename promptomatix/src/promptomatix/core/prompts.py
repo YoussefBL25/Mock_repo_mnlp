@@ -130,6 +130,59 @@ The generated data will evaluate performance on: {task}
 Generate diverse, challenging, and high-quality synthetic data that will provide comprehensive evaluation coverage."""
 
 
+def generate_multimodal_synthetic_prompt(
+    task: str,
+    batch_size: int,
+    example_data: str,
+    template: str,
+    image_field: str,
+    input_fields: str,
+    output_fields: str,
+    feedback_section: str,
+) -> str:
+    return f"""You are an expert multimodal synthetic data generator for Visual Question Answering (VQA).
+
+You will receive one or more images alongside example VQA samples. For each image, generate one high-quality input/output example grounded strictly in visual evidence from that image.
+
+### Reference Examples:
+{example_data}
+
+### Required Number of Samples:
+Generate exactly {batch_size} JSON objects total, one per provided image.
+
+### Required Schema:
+- Follow the exact structure of the examples.
+- Keep all required field names unchanged.
+- Always include the image reference field `{image_field}` in every sample.
+- Valid input fields: {input_fields}
+- Valid output fields: {output_fields}
+
+### Multimodal Grounding Requirements:
+- Every generated question must be answerable from the image alone.
+- Every generated answer must be visually grounded in the image.
+- Do not invent hidden context, metadata, or facts not visible in the image.
+- Match the style and difficulty of the reference examples.
+- Prefer diverse questions across object identity, color, count, action, scene attributes, position, and relations when the image supports them.
+
+### Output Constraints:
+- Return valid JSON only.
+- Return a JSON array of exactly {batch_size} objects.
+- Do not include markdown fences or commentary.
+- Preserve the provided image reference in the `{image_field}` field for each corresponding sample.
+
+### Quality Bar:
+- Questions must be specific and useful for evaluation.
+- Answers must be concise and correct.
+- Avoid near-duplicate questions across images.
+- If an image is ambiguous, ask a question with a stable visual answer instead of guessing.
+
+{feedback_section}
+
+### Reference Template:
+{template}
+"""
+
+
 def generate_synthetic_data_validation_prompt(original_sample: str, generated_data: str) -> str:
     return f"""Analyze the following generated data sample and provide feedback on its quality and diversity.
 

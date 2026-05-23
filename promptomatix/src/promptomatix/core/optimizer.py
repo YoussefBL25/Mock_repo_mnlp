@@ -5,7 +5,7 @@ Core module for prompt optimization functionality.
 import dspy
 import ast
 import json
-from typing import Dict, List, Type, Optional, Union, Tuple
+from typing import Any, Dict, List, Type, Optional, Union, Tuple
 from datetime import datetime
 from dspy.evaluate import Evaluate
 import nltk
@@ -21,8 +21,10 @@ from ..utils.paths import OPTIMIZER_LOGS_DIR
 from ..core.config import Config
 from ..core.session import OptimizationSession
 from ..metrics.metrics import MetricsManager
+from ..vqa import build_openai_vision_content, _clean_model_name, _normalize_openai_base_url
 from .prompts import (
     generate_synthetic_data_prompt, 
+    generate_multimodal_synthetic_prompt,
     generate_synthetic_data_validation_prompt,
     generate_meta_prompt,
     generate_meta_prompt_7,
@@ -128,6 +130,9 @@ class PromptOptimizer:
         """Generate synthetic training data based on sample data in batches."""
         try:
             sample_data, sample_data_group = self._prepare_sample_data()
+            if self._use_precomputed_multimodal_synthetic_data(sample_data_group):
+                print(f"✅ Generated {len(sample_data_group)} multimodal synthetic samples")
+                return sample_data_group[:self.config.synthetic_data_size]
             template = {key: '...' for key in sample_data.keys()}
             
             # Ensure all input and output fields are included in the template
@@ -236,31 +241,183 @@ class PromptOptimizer:
 
     def _prepare_sample_data(self) -> Dict:
         """Prepare sample data for synthetic data generation."""
-        if isinstance(self.config.sample_data, str):
+        if self.config.task_type == 'vqa' and getattr(self.config, 'image_pool', None):
+            return self._prepare_multimodal_sample_data()
+        return self._parse_sample_data_source(self.config.sample_data)
+
+    def _parse_sample_data_source(self, sample_data: Any) -> Tuple[Dict, List[Dict]]:
+        """Parse sample_data into a (first_sample, sample_group) tuple."""
+        if isinstance(sample_data, str):
             try:
-                # First try to parse as JSON
                 try:
-                    data = json.loads(self.config.sample_data)
+                    data = json.loads(sample_data)
                     if isinstance(data, list):
                         return data[0], data
-                    else:
-                        return data, [data]
+                    return data, [data]
                 except json.JSONDecodeError:
-                    # If JSON parsing fails, try ast.literal_eval
-                    data = ast.literal_eval(self.config.sample_data)
+                    data = ast.literal_eval(sample_data)
                     if isinstance(data, list):
                         return data[0], data
-                    else:
-                        return data, [data]
+                    return data, [data]
             except (SyntaxError, ValueError, json.JSONDecodeError) as e:
                 self.logger.error(f"Error parsing sample data: {str(e)}")
                 raise ValueError(f"Invalid sample data format: {str(e)}")
-        elif isinstance(self.config.sample_data, list):
-            return self.config.sample_data[0], self.config.sample_data
-        elif isinstance(self.config.sample_data, dict):
-            return self.config.sample_data, [self.config.sample_data]
-        else:
-            raise ValueError(f"Unexpected sample_data type: {type(self.config.sample_data)}")
+        if isinstance(sample_data, list):
+            return sample_data[0], sample_data
+        if isinstance(sample_data, dict):
+            return sample_data, [sample_data]
+        raise ValueError(f"Unexpected sample_data type: {type(sample_data)}")
+
+    def _prepare_multimodal_sample_data(self) -> Tuple[Dict, List[Dict]]:
+        """Generate VQA synthetic samples from image_pool using a vision-capable model."""
+        example_data, example_group = self._parse_sample_data_source(self.config.sample_data)
+        image_pool = list(getattr(self.config, 'image_pool', []) or [])
+        if not image_pool:
+            raise ValueError("VQA synthetic data generation requires a non-empty image_pool")
+
+        image_field = self._get_image_field_name(example_data)
+        template = {key: '...' for key in example_data.keys()}
+        if image_field not in template:
+            template[image_field] = '...'
+
+        input_fields = self._parse_fields(self.config.input_fields)
+        output_fields = self._parse_fields(self.config.output_fields)
+        for field in input_fields + output_fields:
+            if field not in template:
+                template[field] = '...'
+
+        target_size = min(len(image_pool), max(1, int(self.config.synthetic_data_size or len(image_pool))))
+        image_batch_size = 3
+        generated_samples = []
+        validation_feedback = []
+
+        with dspy.settings.context():
+            tmp_lm = None
+            try:
+                tmp_lm = dspy.LM(
+                    self.config.config_model_name,
+                    api_key=self.config.config_model_api_key,
+                    api_base=self.config.config_model_api_base,
+                    max_tokens=self.config.config_max_tokens,
+                    cache=False
+                )
+                dspy.configure(lm=tmp_lm)
+
+                for start_idx in range(0, target_size, image_batch_size):
+                    batch_images = image_pool[start_idx:start_idx + image_batch_size]
+                    prompt = generate_multimodal_synthetic_prompt(
+                        task=self.config.task,
+                        batch_size=len(batch_images),
+                        example_data=json.dumps(example_group[: min(2, len(example_group))], indent=2),
+                        template=json.dumps([template], indent=2),
+                        image_field=image_field,
+                        input_fields=json.dumps(input_fields),
+                        output_fields=json.dumps(output_fields),
+                        feedback_section=self._format_validation_feedback(validation_feedback),
+                    )
+
+                    response = self._call_llm_api_directly(prompt, images=batch_images)
+                    response = self._clean_llm_response(response)
+                    batch_data = json.loads(response)
+                    generated_samples.extend(
+                        self._normalize_multimodal_samples(
+                            batch_data=batch_data,
+                            batch_images=batch_images,
+                            image_field=image_field,
+                            template=template,
+                        )
+                    )
+
+                self.llm_cost += sum([x['cost'] for x in getattr(tmp_lm, 'history', []) if x.get('cost') is not None])
+            finally:
+                if tmp_lm is not None:
+                    del tmp_lm
+
+        valid_samples = []
+        for sample in generated_samples:
+            is_valid, feedback = self._validate_multimodal_synthetic_sample(
+                sample=sample,
+                image_field=image_field,
+                input_fields=input_fields,
+                output_fields=output_fields,
+            )
+            if is_valid:
+                valid_samples.append(sample)
+            else:
+                validation_feedback.append(feedback)
+
+        if not valid_samples:
+            raise ValueError("Failed to generate any valid multimodal synthetic VQA samples")
+
+        return valid_samples[0], valid_samples[:target_size]
+
+    def _use_precomputed_multimodal_synthetic_data(self, sample_data_group: List[Dict]) -> bool:
+        """Return True when _prepare_sample_data already generated full VQA synthetic data."""
+        return bool(
+            self.config.task_type == 'vqa'
+            and getattr(self.config, 'image_pool', None)
+            and isinstance(sample_data_group, list)
+            and sample_data_group
+        )
+
+    def _get_image_field_name(self, sample_data: Dict) -> str:
+        """Infer the canonical image field name from sample data."""
+        for field_name in ['image_url', 'image_path', 'image']:
+            if field_name in sample_data:
+                return field_name
+        return 'image_url'
+
+    def _format_validation_feedback(self, validation_feedback: List[str]) -> str:
+        """Render previous validation feedback for the next multimodal generation call."""
+        if not validation_feedback:
+            return ""
+        lines = "\n".join(f"- {item}" for item in validation_feedback[-3:])
+        return f"\n### Previous Validation Feedback:\n{lines}\n"
+
+    def _normalize_multimodal_samples(
+        self,
+        batch_data: Any,
+        batch_images: List[str],
+        image_field: str,
+        template: Dict,
+    ) -> List[Dict]:
+        """Normalize one multimodal generation batch into a list of structured samples."""
+        if isinstance(batch_data, dict):
+            batch_data = [batch_data]
+        if not isinstance(batch_data, list):
+            raise ValueError("Multimodal synthetic generation must return a JSON list or object")
+
+        normalized_samples = []
+        for index, sample in enumerate(batch_data):
+            if not isinstance(sample, dict):
+                continue
+            normalized = {key: sample.get(key, '') for key in template.keys()}
+            if index < len(batch_images):
+                normalized[image_field] = sample.get(image_field) or batch_images[index]
+            elif batch_images:
+                normalized[image_field] = sample.get(image_field) or batch_images[-1]
+            normalized_samples.append(normalized)
+        return normalized_samples
+
+    def _validate_multimodal_synthetic_sample(
+        self,
+        sample: Dict,
+        image_field: str,
+        input_fields: List[str],
+        output_fields: List[str],
+    ) -> Tuple[bool, str]:
+        """Validate VQA synthetic samples with lightweight structural checks."""
+        if not sample.get(image_field):
+            return False, f"Missing required image field '{image_field}'"
+
+        for field_name in input_fields + output_fields:
+            if field_name == 'image_context':
+                continue
+            value = sample.get(field_name)
+            if not isinstance(value, str) or not value.strip():
+                return False, f"Missing or empty field '{field_name}'"
+
+        return True, "Sample passed multimodal structural validation"
 
     def _create_synthetic_data_prompt(self, sample_data: Dict, template: Dict, batch_size: int, feedback_section: str = "") -> str:
         """Generate a high-quality prompt for synthetic data creation with specified batch size."""
@@ -630,7 +787,7 @@ class PromptOptimizer:
                 provider = provider.value
             
             if provider.lower() in ('openai', 'local', 'databricks', 'togetherai'):
-                return self._call_openai_api(prompt, model)
+                return self._call_openai_api(prompt, model, images=images)
             elif provider.lower() == 'anthropic':
                 return self._call_anthropic_api(prompt)
             elif provider.lower() == 'gemini':
@@ -690,22 +847,19 @@ class PromptOptimizer:
             self.logger.error(f"Error calling Gemini API: {str(e)}")
             raise
 
-    def _call_openai_api(self, prompt: str, model: str = "") -> str:
+    def _call_openai_api(self, prompt: str, model: str = "", images: list = None) -> str:
         """
         Call OpenAI API directly.
         
         Args:
             prompt (str): The prompt to send
+            images (list): Optional image paths, URLs, or data URLs
             
         Returns:
             str: The API response
         """
         if model == "":
             model = self.config.config_model_name
-        
-        # Strip provider prefix if present (e.g. "openai/") to match local vLLM served model name
-        if model.startswith("openai/"):
-            model = model[len("openai/"):]
             
         from openai import OpenAI
 
@@ -715,16 +869,18 @@ class PromptOptimizer:
                 break
 
         client = OpenAI(
-            api_key=self.config.config_model_api_key,
-            base_url=self.config.config_model_api_base if self.config.config_model_api_base else None
+            api_key=self.config.config_model_api_key or ("EMPTY" if self.config.config_model_api_base else None),
+            base_url=_normalize_openai_base_url(self.config.config_model_api_base)
+            if self.config.config_model_api_base else None
         )
 
 
         try:
+            user_content = build_openai_vision_content(prompt, images) if images else prompt
             response = client.chat.completions.create(
-                model=model,
+                model=_clean_model_name(model),
                 messages=[
-                    {"role": "user", "content": prompt}
+                    {"role": "user", "content": user_content}
                 ],
                 temperature=0.0
             )
