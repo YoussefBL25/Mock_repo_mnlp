@@ -31,15 +31,24 @@ def load_pipeline():
         return
         
     print("⏳ Loading Diffusion Pipeline onto single GPU...")
-    from diffusers import DiffusionPipeline
-    
+    from diffusers import DiffusionPipeline, AutoencoderKL
+
     # We use FLUX.1-schnell or SDXL for fast cluster visual optimization
     model_id = os.environ.get("DIFFUSION_MODEL", "stabilityai/stable-diffusion-xl-base-1.0")
-    
+
     try:
-        # Load in half precision (float16) to conserve VRAM for vLLM
+        # SDXL's stock VAE has known numerical overflow in fp16 — it produces
+        # NaN outputs that save as fully black images (every pixel clamped to
+        # zero). The community 'madebyollin/sdxl-vae-fp16-fix' VAE is a
+        # drop-in replacement that's numerically stable in fp16, same size,
+        # ~167 MB download on first use.
+        vae = AutoencoderKL.from_pretrained(
+            "madebyollin/sdxl-vae-fp16-fix",
+            torch_dtype=torch.float16,
+        )
         pipe = DiffusionPipeline.from_pretrained(
             model_id,
+            vae=vae,
             torch_dtype=torch.float16,
             use_safetensors=True
         )
