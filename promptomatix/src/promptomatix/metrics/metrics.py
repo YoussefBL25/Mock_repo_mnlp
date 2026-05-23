@@ -1628,12 +1628,6 @@ class MetricsManager:
                     "}\n"
                     "```\n"
                 )
-                # Multi-judge averaging: call the VLM judge K times at non-zero
-                # temperature and aggregate via median, which is robust to a
-                # single incoherent ruling (e.g. "outer space is not part of the
-                # concept" when the concept is literally "library in space").
-                K_JUDGE_SAMPLES = 3
-                JUDGE_TEMPERATURE = 0.5  # was 0.1; needs variance for averaging to help
                 vlm_payload = {
                     "model": "Qwen/Qwen2-VL-7B-Instruct",
                     "messages": [
@@ -1650,65 +1644,39 @@ class MetricsManager:
                             ]
                         }
                     ],
-                    "temperature": JUDGE_TEMPERATURE,
+                    "temperature": 0.1,
                     "max_tokens": 500,
                 }
 
-                adherence_samples = []
-                aesthetic_samples = []
-                artifact_samples = []
-                raw_contents = []
-                for k in range(K_JUDGE_SAMPLES):
-                    try:
-                        vlm_resp = requests.post(vlm_url, json=vlm_payload, headers=headers, timeout=30)
-                        if vlm_resp.status_code != 200:
-                            print(f"   ⚠ Judge call {k+1}/{K_JUDGE_SAMPLES} returned HTTP {vlm_resp.status_code}, skipping")
-                            continue
-                        raw_content = vlm_resp.json()["choices"][0]["message"]["content"].strip()
-                        clean_content = raw_content.strip()
-                        if "```json" in clean_content:
-                            clean_content = clean_content.split("```json")[1].split("```")[0].strip()
-                        elif "```" in clean_content:
-                            clean_content = clean_content.split("```")[1].split("```")[0].strip()
-                        eval_data = json.loads(clean_content)
-                        adherence_samples.append(float(eval_data.get("adherence_score", 0.0)))
-                        aesthetic_samples.append(float(eval_data.get("aesthetic_score", 0.0)))
-                        artifact_samples.append(float(eval_data.get("artifact_score", 0.0)))
-                        raw_contents.append(raw_content)
-                    except (json.JSONDecodeError, KeyError, ValueError) as parse_err:
-                        print(f"   ⚠ Judge call {k+1}/{K_JUDGE_SAMPLES} parse failed: {parse_err}, skipping")
-                        continue
+                vlm_resp = requests.post(vlm_url, json=vlm_payload, headers=headers, timeout=30)
+                if vlm_resp.status_code == 200:
+                    raw_content = vlm_resp.json()["choices"][0]["message"]["content"].strip()
+                    clean_content = raw_content.strip()
+                    if "```json" in clean_content:
+                        clean_content = clean_content.split("```json")[1].split("```")[0].strip()
+                    elif "```" in clean_content:
+                        clean_content = clean_content.split("```")[1].split("```")[0].strip()
 
-                if not adherence_samples:
-                    raise ConnectionError("All K judge calls failed (HTTP errors or parse failures).")
+                    eval_data = json.loads(clean_content)
 
-                import statistics as _stats
-                adherence = _stats.median(adherence_samples)
-                aesthetic = _stats.median(aesthetic_samples)
-                artifact = _stats.median(artifact_samples)
+                    print(f"🤖 [VLM JUDGE FEEDBACK COMPLETED]")
+                    print(f"   Raw Judge Content:\n{raw_content}")
+                    print(f"   Breakdown: Adherence (50%): {eval_data.get('adherence_score', 0.0):.2f} | Aesthetics (30%): {eval_data.get('aesthetic_score', 0.0):.2f} | Artifacts (20%): {eval_data.get('artifact_score', 0.0):.2f}")
 
-                print(f"🤖 [VLM JUDGE FEEDBACK COMPLETED — median of {len(adherence_samples)}/{K_JUDGE_SAMPLES}]")
-                print(f"   First reasoning:\n{raw_contents[0]}")
-                fmt = lambda xs: "[" + ", ".join(f"{x:.2f}" for x in xs) + "]"
-                print(f"   Adherence  samples: {fmt(adherence_samples)} → median {adherence:.2f}")
-                print(f"   Aesthetic  samples: {fmt(aesthetic_samples)} → median {aesthetic:.2f}")
-                print(f"   Artifact   samples: {fmt(artifact_samples)} → median {artifact:.2f}")
-                print(f"   Weighted: Adherence (50%): {adherence:.2f} | Aesthetics (30%): {aesthetic:.2f} | Artifacts (20%): {artifact:.2f}")
+                    w_adherence = float(eval_data.get("adherence_score", 0.0)) * 0.50
+                    w_aesthetic = float(eval_data.get("aesthetic_score", 0.0)) * 0.30
+                    w_artifacts = float(eval_data.get("artifact_score", 0.0)) * 0.20
+                    score = w_adherence + w_aesthetic + w_artifacts
 
-                w_adherence = adherence * 0.50
-                w_aesthetic = aesthetic * 0.30
-                w_artifacts = artifact * 0.20
-                score = w_adherence + w_aesthetic + w_artifacts
-
-                # Stash judge response for the optimizer's reflection step.
-                # Use the first reasoning text (any one is fine to ground the
-                # rewriter; the medianed scores are what matter for the metric).
-                MetricsManager._last_image_judge_response = {
-                    "raw_content": raw_contents[0],
-                    "adherence_score": adherence,
-                    "aesthetic_score": aesthetic,
-                    "artifact_score": artifact,
-                }
+                    # Stash judge response for the optimizer's reflection step.
+                    MetricsManager._last_image_judge_response = {
+                        "raw_content": raw_content,
+                        "adherence_score": float(eval_data.get("adherence_score", 0.0)),
+                        "aesthetic_score": float(eval_data.get("aesthetic_score", 0.0)),
+                        "artifact_score": float(eval_data.get("artifact_score", 0.0)),
+                    }
+                else:
+                    raise ConnectionError("VLM Judge returned non-200 status code.")
                     
             except Exception as conn_err:
                 # 3. ROBUST DEVELOPER FALLBACK: If APIs are not online, calculate simulated/mock score
