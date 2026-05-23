@@ -49,10 +49,31 @@ print("❌ Judge failed to start within 420s.", flush=True)
 sys.exit(1)
 '
 
-# 2. Start Diffusion Server in background
+# 2. Start Diffusion Server in background, then BLOCK until port 8001 responds.
+# Serializing SDXL before the rewriter eliminates the profile-time memory race:
+# without this, the rewriter starts profiling while SDXL is still loading
+# weights and grabbing memory, so vLLM sees less free memory than expected
+# and fails with "No available memory for the cache blocks". The download
+# of the fp16-fix VAE on first run makes SDXL's load slower, which exposes
+# the race even when allocations would otherwise fit.
 echo "⏳ Launching local Stable Diffusion Server (SDXL base 1.0)..."
 python3 scratch/local_diffusion_server.py > /scratch/diffusion_server.log 2>&1 &
 DIFF_PID=$!
+
+echo "⏳ Waiting for SDXL to finish loading (port 8001)..."
+python3 -c '
+import socket, time, sys
+start = time.time()
+while time.time() - start < 300:
+    try:
+        with socket.create_connection(("127.0.0.1", 8001), timeout=2):
+            print("✅ SDXL ready, launching rewriter.", flush=True)
+            sys.exit(0)
+    except OSError:
+        time.sleep(5)
+print("❌ SDXL failed to start within 300s.", flush=True)
+sys.exit(1)
+'
 
 # 3. Start vLLM Rewriter Server in background (Qwen2.5-7B-Instruct-AWQ, 4-bit).
 # Text-only instruction-tuned model — much better rule following than VL-7B
