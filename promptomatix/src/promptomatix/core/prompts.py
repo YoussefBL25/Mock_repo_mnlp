@@ -3186,10 +3186,14 @@ Judge feedback (probe runs):
 
 Read the judge's reasoning carefully. Low adherence usually means a key element of the concept is missing or wrong in the image — the prompt didn't anchor it strongly enough, or it fragmented a relational concept like "X floating in Y" into isolated elements. Low aesthetic or artifact scores point at composition/lighting/defects the prompt could counter with concrete style or framing cues.
 
+CRITICAL — handling complaints about unwanted elements: when the judge says the image *contains* something the concept does not call for (e.g. "sand dunes in the background", "palm trees", "building structure", "footprints in the sand"), do NOT add that thing to your prompt with a negation prefix. "no sand dunes" / "without palm trees" / "no building" all push the unwanted concept INTO the diffuser's embedding and the image keeps gaining it. The only way to remove an element is to stop mentioning it OR its near-synonyms entirely — also remove descriptors that imply it (e.g. dropping "dunes stretching into distance" instead of writing "no dunes").
+
 Revise the prompt to address the judge's specific points. Same rules as the first attempt:
 1. Preserve the core subject and any spatial/relational context. Don't fragment "X floating in Y" into "X, items, Y-related stuff" — keep the relationship explicit.
 2. Maximum 60 words. Every word should add concrete visual information (lighting, materials, palette, composition, framing, style) — not atmospheric vibes ("serene", "dreamlike") or restatements.
 3. Plain text only — no JSON, markdown, XML tags, preamble, quotes, or commentary.
+4. Never use negation. "no X", "without Y", "not Z" all push the unwanted concept into the image. To exclude something, drop the words that summon it; do not negate them.
+5. Match detail density to the concept's adjectives. If the concept uses "minimalist", "empty", "sparse", "simple", "plain", "bare", do NOT add detail-rich modifiers ("ornate", "gleaming", "intricate", "metallic surfaces") — those contradict the spareness.
 
 Output ONLY the revised prompt.
 """
@@ -3214,6 +3218,8 @@ Rules:
 1. Preserve the core subject and any spatial or relational context it establishes. If the concept says "X floating in Y", "X inside Y", "X on Y", that relationship must stay explicit in the output — do not fragment it into a list of isolated elements ("library, asteroids, stars" loses what made "library floating in space" the concept).
 2. Maximum 60 words. The score is multiplied by exp(-0.005 × word_count), so each word should pull weight. Add concrete visual information the diffuser will actually use — lighting, materials, palette, composition, framing, lens, art style — not atmospheric vibes ("serene", "dreamlike", "whimsical", "vast openness") or restatements of what's already implied.
 3. Plain text only — no JSON, markdown, XML tags, preamble, quotes, or commentary.
+4. Never use negation. Diffusion models do not understand "no", "without", or "not" — those words push the unwanted concept INTO the embedding and the image gains it. "No palm trees" → palm trees appear. "No building structure" → the building stays. To exclude something, simply do not mention it.
+5. Match detail density to the concept's own adjectives. If the concept describes itself as "minimalist", "empty", "sparse", "simple", "plain", "bare", or "clean", the spareness is the point — do NOT add detail-rich modifiers like "ornate", "gleaming", "intricate", "stretching into distance", "metallic gleaming surfaces" that contradict the spareness. The concept's own adjectives are the brief; honor them. Rich/lush concepts can welcome more concrete descriptors.
 
 Phrasing, format, and level of detail are yours to choose based on what fits this specific concept. Output ONLY the rewritten prompt.
 """
