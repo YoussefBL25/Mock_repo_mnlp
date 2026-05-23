@@ -57,7 +57,9 @@ DIFF_PID=$!
 # 3. Start vLLM Rewriter Server in background (Qwen2.5-7B-Instruct-AWQ, 4-bit).
 # Text-only instruction-tuned model — much better rule following than VL-7B
 # (which locked into tag-style repetition loops on the previous runs).
-# 7B-AWQ: ~5 GB weights → 0.20 × 40 = 8 GB target gives 3 GB headroom.
+# 7B-AWQ: ~5 GB weights. 0.20 (=8 GB) was borderline and started failing again
+# with "No available memory for the cache blocks" — bumped to 0.22 (=8.8 GB)
+# for ~800 MB of extra KV cache headroom. Total ~38.8/40 GB, ~1.2 GB margin.
 # max-model-len 4096: needs to accommodate DSPy/synthetic-data calls that
 # request max_tokens=2048 output. With 158 input tokens + 2048 output = 2206,
 # 2048 would 400 with "Context window exceeded". 4096 gives margin for
@@ -66,7 +68,7 @@ echo "⏳ Launching local vLLM Rewriter Server (Qwen2.5-7B-Instruct-AWQ)..."
 vllm serve Qwen/Qwen2.5-7B-Instruct-AWQ \
   --host 127.0.0.1 \
   --port 8002 \
-  --gpu-memory-utilization 0.20 \
+  --gpu-memory-utilization 0.22 \
   --max-model-len 4096 \
   --quantization awq \
   --trust-remote-code > /scratch/vllm_rewriter.log 2>&1 &
