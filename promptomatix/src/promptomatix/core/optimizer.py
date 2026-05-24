@@ -11,6 +11,7 @@ from dspy.evaluate import Evaluate
 import nltk
 import os
 import logging
+import re
 from pathlib import Path
 import requests
 from io import BytesIO
@@ -194,10 +195,9 @@ class PromptOptimizer:
                                 )
                                 
                                 response = tmp_lm(prompt)[0]
-                                response = self._clean_llm_response(response)
-                                
+
                                 try:
-                                    batch_data = json.loads(response)
+                                    batch_data = self._parse_llm_json_response(response)
                                     # Validate each sample in the batch
                                     for sample in batch_data:
                                         is_valid, feedback = self._validate_synthetic_data(sample, self.config.task)
@@ -317,8 +317,13 @@ class PromptOptimizer:
                     )
 
                     response = self._call_llm_api_directly(prompt, images=batch_images)
-                    response = self._clean_llm_response(response)
-                    batch_data = json.loads(response)
+                    try:
+                        batch_data = self._parse_llm_json_response(response)
+                    except json.JSONDecodeError as exc:
+                        preview = self._clean_llm_response(response)[:500]
+                        self.logger.error(f"Failed to parse multimodal JSON response: {exc}; response preview: {preview}")
+                        validation_feedback.append(f"Failed to parse JSON response: {str(exc)}")
+                        continue
                     generated_samples.extend(
                         self._normalize_multimodal_samples(
                             batch_data=batch_data,
@@ -392,12 +397,50 @@ class PromptOptimizer:
             if not isinstance(sample, dict):
                 continue
             normalized = {key: sample.get(key, '') for key in template.keys()}
-            if index < len(batch_images):
-                normalized[image_field] = sample.get(image_field) or batch_images[index]
-            elif batch_images:
-                normalized[image_field] = sample.get(image_field) or batch_images[-1]
+            fallback_image = batch_images[index] if index < len(batch_images) else (batch_images[-1] if batch_images else '')
+            candidate_image = sample.get(image_field)
+            if self._looks_like_image_placeholder(candidate_image) or self._looks_like_invalid_image_ref(candidate_image):
+                candidate_image = ''
+            normalized[image_field] = candidate_image or fallback_image
             normalized_samples.append(normalized)
         return normalized_samples
+
+    def _looks_like_image_placeholder(self, value: Any) -> bool:
+        """Detect placeholder image identifiers emitted by the model instead of real image refs."""
+        if not isinstance(value, str):
+            return False
+
+        candidate = value.strip().lower()
+        if not candidate:
+            return False
+
+        if candidate.startswith(('http://', 'https://', 'data:image', '/')):
+            return False
+        if Path(candidate).suffix.lower() in {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'}:
+            return False
+
+        return bool(re.fullmatch(r'image(?:_\d+)?(?:_(url|path))?', candidate))
+
+    def _looks_like_invalid_image_ref(self, value: Any) -> bool:
+        """Detect image-like strings that are not usable URLs, data URIs, or existing files."""
+        if not isinstance(value, str):
+            return False
+
+        candidate = value.strip()
+        if not candidate:
+            return False
+        if candidate.startswith(('http://', 'https://', 'data:image')):
+            return False
+
+        path = Path(candidate)
+        if path.exists():
+            return False
+
+        suffix = path.suffix.lower()
+        if suffix in {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'}:
+            return True
+
+        return False
 
     def _validate_multimodal_synthetic_sample(
         self,
@@ -409,6 +452,10 @@ class PromptOptimizer:
         """Validate VQA synthetic samples with lightweight structural checks."""
         if not sample.get(image_field):
             return False, f"Missing required image field '{image_field}'"
+        if self._looks_like_image_placeholder(sample.get(image_field)):
+            return False, f"Placeholder image field '{image_field}' must be replaced with a real image URL or path"
+        if self._looks_like_invalid_image_ref(sample.get(image_field)):
+            return False, f"Invalid image field '{image_field}' must be replaced with a real image URL or existing path"
 
         for field_name in input_fields + output_fields:
             if field_name == 'image_context':
@@ -448,6 +495,33 @@ class PromptOptimizer:
                             content = '\n'.join(lines[1:]).strip()
                 return content
         return response
+
+    def _parse_llm_json_response(self, response: str) -> Any:
+        """Parse a JSON-like LLM response with lightweight repair fallbacks."""
+        cleaned = self._clean_llm_response(response)
+
+        try:
+            return json.loads(cleaned)
+        except json.JSONDecodeError:
+            pass
+
+        for opener, closer in [('[', ']'), ('{', '}')]:
+            start = cleaned.find(opener)
+            end = cleaned.rfind(closer)
+            if start != -1 and end != -1 and end > start:
+                candidate = cleaned[start:end + 1]
+                try:
+                    return json.loads(candidate)
+                except json.JSONDecodeError:
+                    try:
+                        return ast.literal_eval(candidate)
+                    except Exception:
+                        continue
+
+        try:
+            return ast.literal_eval(cleaned)
+        except Exception as exc:
+            raise json.JSONDecodeError(str(exc), cleaned, 0)
 
 
     def run(self, initial_flag: bool = True) -> Dict:
@@ -1104,8 +1178,7 @@ class PromptOptimizer:
             response = self._call_llm_api_directly(prompt)
 
             # read and clean the response which is expected to be in json format
-            response = self._clean_llm_response(response)
-            response = json.loads(response)
+            response = self._parse_llm_json_response(response)
 
             try:
                 is_valid = response['is_valid']

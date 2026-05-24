@@ -12,6 +12,10 @@ import requests
 from datasets import load_dataset, Dataset
 
 from ..utils.paths import CONFIG_LOGS_DIR
+from ..utils.google_lens import (
+    fetch_google_image_search_urls,
+    fetch_similar_image_urls_from_google_lens,
+)
 from .prompts import (
     generate_dspy_module_from_task_description_and_sample_data,
     extract_task_description_from_raw_input,
@@ -294,7 +298,10 @@ class Config:
         self.decouple_task_description_and_raw_input = kwargs.get('decouple_task_description_and_raw_input', False)
         self.image_pool = kwargs.get('image_pool') or []
         self.image_pool_target_size = kwargs.get('image_pool_target_size', 50)
-        self.image_pool_sources = kwargs.get('image_pool_sources', ['google_cse'])
+        self.image_pool_sources = kwargs.get('image_pool_sources', ['serpapi'])
+        self.image_pool_site_filters = kwargs.get('image_pool_site_filters') or []
+        self.image_pool_use_lm_query = kwargs.get('image_pool_use_lm_query', True)
+        self.image_pool_query = kwargs.get('image_pool_query')
         self.auto_fetch_image_pool = kwargs.get('auto_fetch_image_pool', True)
         self.google_custom_search_api_key = (
             kwargs.get('google_custom_search_api_key')
@@ -308,6 +315,12 @@ class Config:
             or os.getenv('GOOGLE_SEARCH_ENGINE_ID')
             or os.getenv('GOOGLE_CSE_ID')
         )
+        self.serpapi_api_key = (
+            kwargs.get('serpapi_api_key')
+            or os.getenv('SERPAPI_API_KEY')
+        )
+        self.serpapi_hl = kwargs.get('serpapi_hl') or os.getenv('SERPAPI_HL') or 'en'
+        self.serpapi_gl = kwargs.get('serpapi_gl') or os.getenv('SERPAPI_GL') or 'us'
 
         # Model configuration
         self.model_name = kwargs.get('model_name')
@@ -349,6 +362,7 @@ class Config:
         self.load_data_local = kwargs.get('load_data_local', False)
         self.local_train_data_path = kwargs.get('local_train_data_path')
         self.local_test_data_path = kwargs.get('local_test_data_path')
+        self._image_pool_query_cache = self.image_pool_query
 
         # Validate backend
         if self.backend not in ['dspy', 'simple_meta_prompt']:
@@ -402,17 +416,20 @@ class Config:
         # Develop prompt template components form raw input
         self._develop_prompt_template_components(tmp_lm)
 
-        self.task_description = self._extract_task_description(tmp_lm)
-        logger.info(f"Task description extracted: {self.task_description[:100]}...")
+        if not self.task_description:
+            self.task_description = self._extract_task_description(tmp_lm)
+            logger.info(f"Task description extracted: {self.task_description[:100]}...")
 
-        self.input_fields, self.output_fields = self._extract_fields(tmp_lm)
-        logger.info(
-            f"Fields extracted - Input: {self.input_fields}, "
-            f"Output: {self.output_fields}"
-        )
+        if not self.input_fields or not self.output_fields:
+            self.input_fields, self.output_fields = self._extract_fields(tmp_lm)
+            logger.info(
+                f"Fields extracted - Input: {self.input_fields}, "
+                f"Output: {self.output_fields}"
+            )
 
-        self.task_type = self._extract_task_type(tmp_lm)
-        logger.info(f"Task type determined: {self.task_type}")
+        if not self.task_type:
+            self.task_type = self._extract_task_type(tmp_lm)
+            logger.info(f"Task type determined: {self.task_type}")
 
         # Extract tools only for relevant task types
         self.tools = self._extract_tools(tmp_lm)
@@ -426,7 +443,7 @@ class Config:
         self.dspy_module = self._set_dspy_module(tmp_lm)
         logger.info(f"Selected DSPy module: {self.dspy_module.__name__}")
 
-        self._resolve_image_pool()
+        self._resolve_image_pool(tmp_lm=tmp_lm)
         if self.image_pool:
             logger.info(f"Image pool prepared with {len(self.image_pool)} items")
 
@@ -485,20 +502,24 @@ class Config:
         #    self.raw_input_improvised = self._improvise_raw_input(tmp_lm)
         #    logger.info("Human input improvised")
 
-        self.task_description = self._extract_task_description(tmp_lm)
-        logger.info(f"Task description extracted: {self.task_description[:100]}...")
+        if not self.task_description:
+            self.task_description = self._extract_task_description(tmp_lm)
+            logger.info(f"Task description extracted: {self.task_description[:100]}...")
 
-        self.sample_data = self._extract_sample_data(tmp_lm)
-        logger.info(f"Sample data extracted: {self.sample_data[:100]}...")
+        if not self.sample_data:
+            self.sample_data = self._extract_sample_data(tmp_lm)
+            logger.info(f"Sample data extracted: {self.sample_data[:100]}...")
 
-        self.task_type = self._extract_task_type(tmp_lm)
-        logger.info(f"Task type determined: {self.task_type}")
+        if not self.task_type:
+            self.task_type = self._extract_task_type(tmp_lm)
+            logger.info(f"Task type determined: {self.task_type}")
 
-        self.input_fields, self.output_fields = self._extract_fields(tmp_lm)
-        logger.info(
-            f"Fields extracted - Input: {self.input_fields}, "
-            f"Output: {self.output_fields}"
-        )
+        if not self.input_fields or not self.output_fields:
+            self.input_fields, self.output_fields = self._extract_fields(tmp_lm)
+            logger.info(
+                f"Fields extracted - Input: {self.input_fields}, "
+                f"Output: {self.output_fields}"
+            )
 
         # Extract tools only for relevant task types
         self.tools = self._extract_tools(tmp_lm)
@@ -514,7 +535,7 @@ class Config:
 
         # Load user-provided data if available
         self._load_user_provided_data()
-        self._resolve_image_pool()
+        self._resolve_image_pool(tmp_lm=tmp_lm)
         if self.image_pool:
             logger.info(f"Image pool prepared with {len(self.image_pool)} items")
 
@@ -548,7 +569,7 @@ class Config:
         else:
             return response
 
-    def _resolve_image_pool(self) -> None:
+    def _resolve_image_pool(self, tmp_lm=None) -> None:
         """Prepare the image pool for multimodal/VQA tasks.
 
         If the user provided an image_pool, keep it and only normalize/deduplicate it.
@@ -576,7 +597,7 @@ class Config:
             self.image_pool = self._deduplicate_list(self.image_pool)
             return
 
-        query = self._build_image_pool_query()
+        query = self._build_image_pool_query(tmp_lm=tmp_lm)
         if not query:
             self.image_pool = self._deduplicate_list(self.image_pool)
             return
@@ -646,24 +667,190 @@ class Config:
                     refs.append(str(value))
         return refs
 
-    def _build_image_pool_query(self) -> str:
-        """Build a lightweight keyword query from the task and sample questions."""
-        text_parts = [
-            self.task_description,
-            self.raw_input,
-            getattr(self, 'task', None),
-            getattr(self, 'question', None),
-            self.context,
-        ]
+    def _build_image_pool_query(self, tmp_lm=None) -> str:
+        """Build a concise image-search query, optionally using an LM."""
+        if self._image_pool_query_cache:
+            return self._image_pool_query_cache
 
-        sample_questions = []
+        if self.image_pool_query:
+            self._image_pool_query_cache = self.image_pool_query.strip()
+            return self._image_pool_query_cache
+
+        hint_phrases = []
         for source in [self.sample_data, self.train_data]:
-            sample_questions.extend(self._extract_text_fields_from_source(source, ['question', 'prompt', 'query']))
+            hint_phrases.extend(self._collect_image_search_hints_from_source(source))
 
-        text_parts.extend(sample_questions[:5])
-        combined_text = " ".join(part for part in text_parts if part)
-        tokens = self._extract_keywords(combined_text)
-        return " ".join(tokens[:6])
+        concise_phrases = []
+        for phrase in hint_phrases:
+            normalized = self._normalize_image_search_phrase(phrase)
+            if normalized:
+                concise_phrases.append(normalized)
+
+        deterministic_hint_query = " ".join(self._deduplicate_list(concise_phrases)[:3]).strip()
+
+        lm_query = ""
+        if self.image_pool_use_lm_query:
+            lm_query = self._generate_image_pool_query_with_lm(
+                tmp_lm=tmp_lm,
+                hint_phrases=hint_phrases,
+            )
+            lm_query = self._normalize_image_search_phrase(lm_query)
+
+        query_parts = []
+        if lm_query:
+            query_parts.append(lm_query)
+        elif deterministic_hint_query:
+            query_parts.append(deterministic_hint_query)
+
+        fallback_text = " ".join(
+            part for part in [
+                self.raw_input,
+                getattr(self, 'question', None),
+                self.context,
+            ] if part
+        )
+        fallback_tokens = self._extract_keywords(fallback_text)[:4]
+        query_parts.extend(token for token in fallback_tokens if token not in query_parts)
+
+        if self.image_pool_site_filters and 'serpapi' in self.image_pool_sources:
+            query_parts.extend([f"site:{domain}" for domain in self._deduplicate_list(self.image_pool_site_filters)])
+
+        self._image_pool_query_cache = " ".join(self._deduplicate_list(query_parts)[:8])
+        return self._image_pool_query_cache
+
+    def _generate_image_pool_query_with_lm(self, tmp_lm=None, hint_phrases: Optional[List[str]] = None) -> str:
+        """Use the configured LM to compress task context into a short image-search query."""
+        hints = self._deduplicate_list((hint_phrases or []))[:6]
+        question_hints = []
+        for source in [self.sample_data, self.train_data]:
+            question_hints.extend(self._extract_text_fields_from_source(source, ['question', 'prompt', 'query']))
+
+        prompt = f"""Generate one concise web image search query.
+
+Task:
+{self.raw_input or ''}
+
+Task description:
+{self.task_description or ''}
+
+Sample questions:
+{json.dumps(question_hints[:3], ensure_ascii=True)}
+
+High-signal labels or answers:
+{json.dumps(hints, ensure_ascii=True)}
+
+Rules:
+- Return only the query text
+- Use 2 to 6 words
+- Prefer the most specific visual entity or class
+- No punctuation
+- No explanations
+- No full sentences
+"""
+
+        lm = tmp_lm
+        created_tmp_lm = False
+        try:
+            if lm is None:
+                lm = self._setup_model_config()
+                created_tmp_lm = True
+            response = lm(prompt)[0].strip()
+            log_llm_interaction(prompt, response, "image_pool_query_generation")
+            return response
+        except Exception as exc:
+            logger.warning(f"LM image query generation failed, falling back to deterministic query: {exc}")
+            return ""
+        finally:
+            if created_tmp_lm:
+                try:
+                    del lm
+                except Exception:
+                    pass
+
+    def _normalize_image_search_phrase(self, text: str) -> str:
+        """Trim a free-form field down to a short phrase suitable for image search."""
+        if not isinstance(text, str):
+            return ""
+
+        cleaned = re.sub(r"\s+", " ", text).strip(" ,.;:!?")
+        if not cleaned:
+            return ""
+
+        lowered = cleaned.lower()
+        boilerplate_fragments = [
+            'you are', 'your task', 'tasked with', 'objective', 'analyze',
+            'analysis system', 'assistant', 'question', 'answer', 'identify',
+            'depicted', 'shown', 'image', 'picture', 'photo'
+        ]
+        for fragment in boilerplate_fragments:
+            lowered = lowered.replace(fragment, " ")
+
+        lowered = re.sub(r"\s+", " ", lowered).strip(" ,.;:!?")
+        if not lowered:
+            return ""
+
+        tokens = re.findall(r"[A-Za-z0-9][A-Za-z0-9'_-]*", lowered)
+        if not tokens:
+            return ""
+
+        stopwords = {
+            'a', 'an', 'and', 'are', 'be', 'depicted', 'for', 'from', 'image',
+            'images', 'in', 'is', 'kind', 'object', 'of', 'on', 'photo',
+            'picture', 'shown', 'species', 'that', 'the', 'this', 'to', 'what'
+        }
+        filtered = [token for token in tokens if token not in stopwords]
+        if not filtered:
+            filtered = tokens
+
+        return " ".join(filtered[:4]).strip()
+
+    def _collect_image_search_hints_from_source(self, source: Any) -> List[str]:
+        """Extract label-like fields that improve image search specificity."""
+        hint_fields = [
+            'answer', 'answers', 'label', 'labels', 'class_name', 'category',
+            'title', 'object', 'species', 'caption', 'description'
+        ]
+        values = []
+        if source is None:
+            return values
+
+        items = source
+        if isinstance(source, str):
+            try:
+                items = json.loads(source)
+            except Exception:
+                try:
+                    items = ast.literal_eval(source)
+                except Exception:
+                    return values
+
+        if isinstance(items, dict):
+            items = [items]
+        if not isinstance(items, list):
+            return values
+
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            for field_name in hint_fields:
+                value = item.get(field_name)
+                if isinstance(value, str) and value.strip():
+                    values.append(value.strip())
+                elif isinstance(value, dict):
+                    for nested_key in ['text', 'label', 'answer', 'value']:
+                        nested_value = value.get(nested_key)
+                        if isinstance(nested_value, str) and nested_value.strip():
+                            values.append(nested_value.strip())
+                elif isinstance(value, list):
+                    for entry in value:
+                        if isinstance(entry, str) and entry.strip():
+                            values.append(entry.strip())
+                        elif isinstance(entry, dict):
+                            for nested_key in ['text', 'label', 'answer', 'value']:
+                                nested_value = entry.get(nested_key)
+                                if isinstance(nested_value, str) and nested_value.strip():
+                                    values.append(nested_value.strip())
+        return values
 
     def _extract_text_fields_from_source(self, source: Any, field_names: List[str]) -> List[str]:
         """Extract text fields such as question/prompt from a dataset-like source."""
@@ -700,7 +887,9 @@ class Config:
         stopwords = {
             'a', 'an', 'and', 'answer', 'answers', 'are', 'bird', 'by', 'for', 'from',
             'given', 'identify', 'image', 'images', 'in', 'is', 'kind', 'of', 'on',
-            'picture', 'question', 'the', 'this', 'to', 'visual', 'what', 'with'
+            'picture', 'question', 'species', 'task', 'tasked', 'objective', 'primary',
+            'developing', 'analysis', 'system', 'designed', 'depicted', 'your', 'the',
+            'this', 'to', 'visual', 'what', 'with'
         }
         tokens = re.findall(r"[A-Za-z0-9][A-Za-z0-9_-]{1,}", text.lower())
         keywords = [token for token in tokens if token not in stopwords]
@@ -714,7 +903,14 @@ class Config:
             if len(candidates) >= limit:
                 break
 
-            if source_name == 'google_cse':
+            if source_name == 'serpapi':
+                candidates.extend(
+                    self._fetch_serpapi_image_candidates(
+                        query=query,
+                        limit=limit - len(candidates),
+                    )
+                )
+            elif source_name == 'google_cse':
                 candidates.extend(
                     self._fetch_google_cse_image_candidates(
                         query=query,
@@ -723,6 +919,48 @@ class Config:
                 )
 
         return self._resolve_existing_image_urls(candidates, limit=limit)
+
+    def _fetch_serpapi_image_candidates(self, query: str, limit: int) -> List[str]:
+        """Fetch image candidates from SerpApi using the seed image first, then text search."""
+        if limit <= 0:
+            return []
+
+        if not self.serpapi_api_key:
+            logger.warning("SerpApi image retrieval requested but SERPAPI_API_KEY is not configured.")
+            return []
+
+        candidates = []
+        seed_images = self._collect_image_references()
+
+        if seed_images:
+            try:
+                candidates.extend(
+                    fetch_similar_image_urls_from_google_lens(
+                        image_ref=seed_images[0],
+                        api_key=self.serpapi_api_key,
+                        limit=max(limit * 2, limit),
+                        hl=self.serpapi_hl,
+                        gl=self.serpapi_gl,
+                    )
+                )
+            except Exception as exc:
+                logger.warning(f"SerpApi Google Lens image retrieval failed: {exc}")
+
+        if len(candidates) < limit:
+            try:
+                candidates.extend(
+                    fetch_google_image_search_urls(
+                        query=query,
+                        api_key=self.serpapi_api_key,
+                        limit=max((limit - len(candidates)) * 2, limit - len(candidates)),
+                        hl=self.serpapi_hl,
+                        gl=self.serpapi_gl,
+                    )
+                )
+            except Exception as exc:
+                logger.warning(f"SerpApi Google Images retrieval failed: {exc}")
+
+        return self._deduplicate_list(candidates)[:max(limit * 3, limit)]
 
     def _fetch_google_cse_image_candidates(self, query: str, limit: int) -> List[str]:
         """Fetch image result URLs from Google's Custom Search JSON API."""
@@ -770,20 +1008,27 @@ class Config:
                 mime = (item.get("mime") or "").lower()
                 if link and (not mime or mime.startswith("image/")):
                     collected.append(link)
-                    if len(collected) >= limit:
-                        break
+                image_meta = item.get("image") or {}
+                thumbnail_link = image_meta.get("thumbnailLink")
+                if thumbnail_link:
+                    collected.append(thumbnail_link)
+                if len(collected) >= max(limit * 3, limit):
+                    break
 
             next_page = payload.get("queries", {}).get("nextPage", [])
             if not next_page:
                 break
             start = next_page[0].get("startIndex", start + num)
 
-        return self._deduplicate_list(collected)[:limit]
+        return self._deduplicate_list(collected)[:max(limit * 3, limit)]
 
     def _resolve_existing_image_urls(self, candidates: List[str], limit: int) -> List[str]:
         """Keep only candidate URLs that resolve to readable image resources."""
         resolved = []
-        headers = {"User-Agent": "promptomatix/0.1"}
+        headers = {
+            "User-Agent": "Mozilla/5.0 (compatible; promptomatix/0.1)",
+            "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+        }
 
         for candidate in self._deduplicate_list(candidates):
             if len(resolved) >= limit:
@@ -802,7 +1047,11 @@ class Config:
 
                 content_type = response.headers.get("Content-Type", "").lower()
                 final_url = response.url or candidate
-                if content_type.startswith("image/") and final_url not in resolved:
+                final_suffix = Path(final_url.split("?", 1)[0]).suffix.lower()
+                if (
+                    content_type.startswith("image/")
+                    or final_suffix in {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'}
+                ) and final_url not in resolved:
                     resolved.append(final_url)
             except Exception:
                 continue
