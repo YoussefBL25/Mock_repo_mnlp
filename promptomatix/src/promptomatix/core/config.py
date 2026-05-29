@@ -45,7 +45,7 @@ DEFAULT_TRAIN_RATIO = 0.2
 
 class LambdaPenalty:
     """Class to manage the lambda penalty value for metrics calculations."""
-    _value = 0.005  # Default value
+    _value = 0  # Default value
 
     @classmethod
     def get_value(cls) -> float:
